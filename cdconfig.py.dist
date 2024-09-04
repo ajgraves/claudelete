@@ -1,0 +1,8 @@
+DB_CONFIG = {
+    'host': 'localhost',
+    'user': 'user',
+    'passwd': 'pass',
+    'db': 'dbname'
+}
+
+BOT_TOKEN = 'YOUR_BOT_TOKEN'
