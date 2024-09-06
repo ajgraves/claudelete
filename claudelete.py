@@ -286,6 +286,11 @@ async def list_channels(interaction: discord.Interaction):
 async def purge_user(interaction: discord.Interaction, username: str):
     await interaction.response.defer(ephemeral=True)
     
+    try:
+        print(f"Purging messages from user {username} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+    except UnicodeEncodeError:
+        print(f"Purging messages from user {username} in a guild with unsupported characters")
+
     purged_count = 0
     for channel in interaction.guild.text_channels:
         try:
