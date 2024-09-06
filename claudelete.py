@@ -279,12 +279,18 @@ async def list_channels(interaction: discord.Interaction):
             cursor.close()
             connection.close()
 
+# Check if the bot is alive
 @bot.tree.command(name="ping", description="Check if the bot is responsive")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message('Pong!')
 
+# The below commands are only for fun, and are absolutely not needed in any way, shape or form for the bot to function.
 @bot.tree.command(name="marco", description="Play Marco Polo")
 async def marco(interaction: discord.Interaction):
     await interaction.response.send_message("Polo!")
+
+@bot.tree.command(name="sneaky", description="Very sneaky...")
+async def sneaky(interaction: discord.Interaction):
+    await interaction.response.send_message("You fargin sneaky bastage!")
 
 bot.run(cdconfig.BOT_TOKEN)  # Replace with your actual bot token
