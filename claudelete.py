@@ -1,5 +1,6 @@
 import discord
-from discord import app_commands
+from discord import app_commands, HTTPException, NotFound, Forbidden
+from discord.errors import RateLimited
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
 import pytz
@@ -278,6 +279,82 @@ async def list_channels(interaction: discord.Interaction):
         finally:
             cursor.close()
             connection.close()
+
+@bot.tree.command(name="purge_user", description="Purge messages from a user who has left the server")
+@app_commands.describe(username="The username of the user whose messages to purge")
+@app_commands.checks.has_permissions(administrator=True)
+async def purge_user(interaction: discord.Interaction, username: str):
+    await interaction.response.defer(ephemeral=True)
+    
+    purged_count = 0
+    for channel in interaction.guild.text_channels:
+        try:
+            async for message in channel.history(limit=None):
+                if message.author.name == username:
+                    try:
+                        await message.delete()
+                        purged_count += 1
+                        try:
+                            print(f"Deleted message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                        except UnicodeEncodeError:
+                            print(f"Deleted message in a guild/channel with unsupported characters")
+                    except Forbidden:
+                        await interaction.followup.send(f"I don't have permission to delete messages in {channel.name}.", ephemeral=True)
+                        try:
+                            print(f"No permission to delete messages in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                        except UnicodeEncodeError:
+                            print(f"No permission to delete messages in a guild/channel with unsupported characters")
+                        break  # Move to the next channel
+                    except NotFound:
+                        # Message was already deleted, continue to the next one
+                        try:
+                            print(f"Message already deleted in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                        except UnicodeEncodeError:
+                            print(f"Message already deleted in a guild/channel with unsupported characters")
+                        continue
+                    except RateLimited as e:
+                        # Handle rate limiting
+                        retry_after = e.retry_after
+                        await interaction.followup.send(f"Rate limited. Waiting for {retry_after:.2f} seconds before continuing.", ephemeral=True)
+                        try:
+                            print(f"Rate limited in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Waiting for {retry_after:.2f} seconds.")
+                        except UnicodeEncodeError:
+                            print(f"Rate limited in a guild/channel with unsupported characters. Waiting for {retry_after:.2f} seconds.")
+                        await asyncio.sleep(retry_after)
+                        # Retry deleting the message
+                        try:
+                            await message.delete()
+                            purged_count += 1
+                            try:
+                                print(f"Deleted message after rate limit in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                            except UnicodeEncodeError:
+                                print(f"Deleted message after rate limit in a guild/channel with unsupported characters")
+                        except NotFound:
+                            # Message might have been deleted during the wait
+                            try:
+                                print(f"Message already deleted after rate limit in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                            except UnicodeEncodeError:
+                                print(f"Message already deleted after rate limit in a guild/channel with unsupported characters")
+                            continue
+                    except HTTPException as e:
+                        await interaction.followup.send(f"An error occurred while deleting a message in {channel.name}: {str(e)}", ephemeral=True)
+                        try:
+                            print(f"Error deleting message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
+                        except UnicodeEncodeError:
+                            print(f"Error deleting message in a guild/channel with unsupported characters: {str(e)}")
+                        await asyncio.sleep(1)  # Wait a bit before trying the next message
+        except HTTPException as e:
+            await interaction.followup.send(f"An error occurred while accessing messages in {channel.name}: {str(e)}", ephemeral=True)
+            try:
+                print(f"Error accessing messages in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
+            except UnicodeEncodeError:
+                print(f"Error accessing messages in a guild/channel with unsupported characters: {str(e)}")
+
+    await interaction.followup.send(f"Purged {purged_count} messages from user {username}.", ephemeral=True)
+    try:
+        print(f"Purged {purged_count} messages from user {username} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+    except UnicodeEncodeError:
+        print(f"Purged {purged_count} messages from user {username} in a guild with unsupported characters")
 
 # Check if the bot is alive
 @bot.tree.command(name="ping", description="Check if the bot is responsive")
