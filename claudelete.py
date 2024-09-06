@@ -98,7 +98,7 @@ async def on_ready():
     init_database()
     delete_old_messages.start()
 
-@tasks.loop(minutes=5)
+@tasks.loop(minutes=1)
 async def delete_old_messages():
     connection = create_connection()
     if connection:
@@ -135,6 +135,9 @@ async def delete_old_messages():
                                     except UnicodeEncodeError:
                                         print(f'Forbidden to delete message in a guild/channel with unsupported characters...')
                                     await asyncio.sleep(60)  # Wait 1 minute before trying again
+                                except discord.RateLimited as e:
+                                    print(f'Discord is rate limiting me, I am sleeping for {e.retry_after}...')
+                                    await asyncio.sleep(e.retry_after)  # Wait for the recommended retry time
                                 except discord.HTTPException as e:
                                     try:
                                         print(f'Error deleting message in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}: {e}')
