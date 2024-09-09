@@ -140,11 +140,30 @@ async def delete_old_messages():
                                     print(f'Discord is rate limiting me, I am sleeping for {e.retry_after}...')
                                     await asyncio.sleep(e.retry_after)  # Wait for the recommended retry time
                                 except discord.HTTPException as e:
+                                    if e.status == 503:
+                                        try:
+                                            print(f'HTTP 503 error in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}: {e}')
+                                        except UnicodeEncodeError:
+                                            print(f'HTTP 503 error in a guild/channel with unsupported characters...')
+                                        await asyncio.sleep(60)  # Wait 1 minute before trying again
+                                    else:
+                                        try:
+                                            print(f'Error deleting message in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}: {e}')
+                                        except UnicodeEncodeError:
+                                            print(f'Error deleting message in a guild/channel with unsupported characters...')
+                                    await asyncio.sleep(e.retry_after if hasattr(e, 'retry_after') else 5)  # Wait for the recommended retry time or 5 seconds
+                                except discord.ConnectionClosed:
                                     try:
-                                        print(f'Error deleting message in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}: {e}')
+                                        print(f'Connection closed while deleting message in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}')
                                     except UnicodeEncodeError:
-                                        print(f'Error deleting message in a guild/channel with unsupported characters...')
-                                    await asyncio.sleep(e.retry_after)  # Wait for the recommended retry time
+                                        print(f'Connection closed while deleting message in a guild/channel with unsupported characters...')
+                                    await asyncio.sleep(30)  # Wait 30 seconds before trying again
+                                except asyncio.TimeoutError:
+                                    try:
+                                        print(f'Timeout while deleting message in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}')
+                                    except UnicodeEncodeError:
+                                        print(f'Timeout while deleting message in a guild/channel with unsupported characters...')
+                                    await asyncio.sleep(10)  # Wait 10 seconds before trying again
                                 await asyncio.sleep(1)  # To avoid hitting rate limits
         except Error as e:
             print(f"Error reading from database: {e}")
