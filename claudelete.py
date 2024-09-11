@@ -434,10 +434,9 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
 
     while True:
         try:
-            if last_message_id:
-                messages = await channel.history(limit=100, before=discord.Object(id=last_message_id)).flatten()
-            else:
-                messages = await channel.history(limit=100).flatten()
+            messages = []
+            async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
+                messages.append(message)
 
             if not messages:
                 break
