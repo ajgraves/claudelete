@@ -9,6 +9,7 @@ import asyncio
 import MySQLdb
 from MySQLdb import Error
 import time
+import random
 import cdconfig
 
 intents = discord.Intents.default()
@@ -418,6 +419,8 @@ async def purge_user(interaction: discord.Interaction, username: str):
     except UnicodeEncodeError:
         print(f"Purged {purged_count} messages from user {username} in a guild with unsupported characters")
 
+import random
+
 @bot.tree.command(name="purge_channel", description="Purge all messages from a specific channel")
 @app_commands.describe(channel="The channel to purge messages from")
 @app_commands.default_permissions(administrator=True)
@@ -451,6 +454,10 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                         print(f"Purged message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
                     except UnicodeEncodeError:
                         print(f"Purged message in a guild/channel with unsupported characters")
+                    
+                    # Add a small random delay between deletions
+                    await asyncio.sleep(random.uniform(0.5, 1.5))
+
                 except discord.errors.NotFound:
                     try:
                         print(f"Message already purged in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
@@ -465,7 +472,16 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                         print(f"No permission to delete messages in a guild/channel with unsupported characters")
                     return
                 except discord.errors.HTTPException as e:
-                    if e.status == 503:
+                    if e.status == 429:  # This is a rate limit error
+                        retry_after = e.retry_after
+                        await interaction.followup.send(f"Rate limited. Waiting for {retry_after:.2f} seconds before continuing.", ephemeral=True)
+                        try:
+                            print(f"Rate limited in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Waiting for {retry_after:.2f} seconds.")
+                        except UnicodeEncodeError:
+                            print(f"Rate limited in a guild/channel with unsupported characters. Waiting for {retry_after:.2f} seconds.")
+                        await asyncio.sleep(retry_after)
+                        continue
+                    elif e.status == 503:
                         await interaction.followup.send(f"Discord service unavailable. Retrying in 60 seconds.", ephemeral=True)
                         try:
                             print(f"HTTP 503 error in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
@@ -480,14 +496,6 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                         except UnicodeEncodeError:
                             print(f"Error purging message in a guild/channel with unsupported characters: {str(e)}")
                         await asyncio.sleep(5)  # Wait 5 seconds before trying the next message
-                except discord.errors.RateLimited as e:
-                    retry_after = e.retry_after
-                    await interaction.followup.send(f"Rate limited. Waiting for {retry_after:.2f} seconds before continuing.", ephemeral=True)
-                    try:
-                        print(f"Rate limited in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Waiting for {retry_after:.2f} seconds.")
-                    except UnicodeEncodeError:
-                        print(f"Rate limited in a guild/channel with unsupported characters. Waiting for {retry_after:.2f} seconds.")
-                    await asyncio.sleep(retry_after)
                 except discord.ConnectionClosed:
                     await interaction.followup.send(f"Connection to Discord closed. Retrying in 30 seconds.", ephemeral=True)
                     try:
@@ -505,7 +513,8 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                     await asyncio.sleep(10)  # Wait 10 seconds before retrying
                     continue
 
-            await asyncio.sleep(1)  # Short delay to avoid rate limiting
+            # Add a longer delay between batches
+            await asyncio.sleep(random.uniform(2, 4))
 
         except discord.errors.Forbidden:
             await interaction.followup.send(f"I don't have permission to access messages in {channel.name}.", ephemeral=True)
