@@ -418,6 +418,117 @@ async def purge_user(interaction: discord.Interaction, username: str):
     except UnicodeEncodeError:
         print(f"Purged {purged_count} messages from user {username} in a guild with unsupported characters")
 
+@bot.tree.command(name="purge_channel", description="Purge all messages from a specific channel")
+@app_commands.describe(channel="The channel to purge messages from")
+@app_commands.default_permissions(administrator=True)
+async def purge_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        print(f"Purging all messages from channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+    except UnicodeEncodeError:
+        print(f"Purging all messages from a channel in a guild with unsupported characters")
+
+    purged_count = 0
+    last_message_id = None
+
+    while True:
+        try:
+            if last_message_id:
+                messages = await channel.history(limit=100, before=discord.Object(id=last_message_id)).flatten()
+            else:
+                messages = await channel.history(limit=100).flatten()
+
+            if not messages:
+                break
+
+            last_message_id = messages[-1].id
+
+            for message in messages:
+                try:
+                    await message.delete()
+                    purged_count += 1
+                    try:
+                        print(f"Purged message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                    except UnicodeEncodeError:
+                        print(f"Purged message in a guild/channel with unsupported characters")
+                except discord.errors.NotFound:
+                    try:
+                        print(f"Message already purged in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                    except UnicodeEncodeError:
+                        print(f"Message already purged in a guild/channel with unsupported characters")
+                    continue
+                except discord.errors.Forbidden:
+                    await interaction.followup.send(f"I don't have permission to delete messages in {channel.name}.", ephemeral=True)
+                    try:
+                        print(f"No permission to delete messages in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                    except UnicodeEncodeError:
+                        print(f"No permission to delete messages in a guild/channel with unsupported characters")
+                    return
+                except discord.errors.HTTPException as e:
+                    if e.status == 503:
+                        await interaction.followup.send(f"Discord service unavailable. Retrying in 60 seconds.", ephemeral=True)
+                        try:
+                            print(f"HTTP 503 error in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
+                        except UnicodeEncodeError:
+                            print(f"HTTP 503 error in a guild/channel with unsupported characters: {str(e)}")
+                        await asyncio.sleep(60)  # Wait 60 seconds before retrying
+                        continue
+                    else:
+                        await interaction.followup.send(f"An error occurred while purging a message in {channel.name}: {str(e)}", ephemeral=True)
+                        try:
+                            print(f"Error purging message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
+                        except UnicodeEncodeError:
+                            print(f"Error purging message in a guild/channel with unsupported characters: {str(e)}")
+                        await asyncio.sleep(5)  # Wait 5 seconds before trying the next message
+                except discord.errors.RateLimited as e:
+                    retry_after = e.retry_after
+                    await interaction.followup.send(f"Rate limited. Waiting for {retry_after:.2f} seconds before continuing.", ephemeral=True)
+                    try:
+                        print(f"Rate limited in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Waiting for {retry_after:.2f} seconds.")
+                    except UnicodeEncodeError:
+                        print(f"Rate limited in a guild/channel with unsupported characters. Waiting for {retry_after:.2f} seconds.")
+                    await asyncio.sleep(retry_after)
+                except discord.ConnectionClosed:
+                    await interaction.followup.send(f"Connection to Discord closed. Retrying in 30 seconds.", ephemeral=True)
+                    try:
+                        print(f"Connection closed while purging message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                    except UnicodeEncodeError:
+                        print(f"Connection closed while purging message in a guild/channel with unsupported characters")
+                    await asyncio.sleep(30)  # Wait 30 seconds before retrying
+                    continue
+                except asyncio.TimeoutError:
+                    await interaction.followup.send(f"Operation timed out. Retrying in 10 seconds.", ephemeral=True)
+                    try:
+                        print(f"Timeout while purging message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                    except UnicodeEncodeError:
+                        print(f"Timeout while purging message in a guild/channel with unsupported characters")
+                    await asyncio.sleep(10)  # Wait 10 seconds before retrying
+                    continue
+
+            await asyncio.sleep(1)  # Short delay to avoid rate limiting
+
+        except discord.errors.Forbidden:
+            await interaction.followup.send(f"I don't have permission to access messages in {channel.name}.", ephemeral=True)
+            try:
+                print(f"No permission to access messages in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+            except UnicodeEncodeError:
+                print(f"No permission to access messages in a guild/channel with unsupported characters")
+            return
+        except discord.errors.HTTPException as e:
+            await interaction.followup.send(f"An error occurred while accessing messages in {channel.name}: {str(e)}", ephemeral=True)
+            try:
+                print(f"Error accessing messages in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
+            except UnicodeEncodeError:
+                print(f"Error accessing messages in a guild/channel with unsupported characters: {str(e)}")
+            await asyncio.sleep(5)  # Wait 5 seconds before retrying
+
+    await interaction.followup.send(f"Purged {purged_count} messages from channel {channel.name}.", ephemeral=True)
+    try:
+        print(f"Purged {purged_count} messages from channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+    except UnicodeEncodeError:
+        print(f"Purged {purged_count} messages from a channel in a guild with unsupported characters")
+
 # Check if the bot is alive
 @bot.tree.command(name="ping", description="Check if the bot is responsive")
 async def ping(interaction: discord.Interaction):
