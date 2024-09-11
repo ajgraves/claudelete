@@ -201,7 +201,7 @@ def get_text_channels(guild):
     app_commands.Choice(name="Days", value="days"),
     app_commands.Choice(name="Weeks", value="weeks")
 ])
-@app_commands.default_permissions(manage_channels=True)
+@app_commands.checks.has_permissions(manage_channels=True)
 async def add_channel(interaction: discord.Interaction, channel: discord.TextChannel, time: int, unit: str):
     try:
         minutes = convert_to_minutes(time, unit)
@@ -227,7 +227,7 @@ async def add_channel(interaction: discord.Interaction, channel: discord.TextCha
 
 @bot.tree.command(name="remove_channel", description="Remove a channel from auto-delete")
 @app_commands.describe(channel="The channel to remove from auto-delete")
-@app_commands.default_permissions(manage_channels=True)
+@app_commands.checks.has_permissions(manage_channels=True)
 async def remove_channel(interaction: discord.Interaction, channel: discord.TextChannel):
     connection = create_connection()
     if connection:
@@ -260,7 +260,7 @@ async def remove_channel(interaction: discord.Interaction, channel: discord.Text
     app_commands.Choice(name="Days", value="days"),
     app_commands.Choice(name="Weeks", value="weeks")
 ])
-@app_commands.default_permissions(manage_channels=True)
+@app_commands.checks.has_permissions(manage_channels=True)
 async def update_time(interaction: discord.Interaction, channel: discord.TextChannel, time: int, unit: str):
     try:
         minutes = convert_to_minutes(time, unit)
@@ -288,7 +288,7 @@ async def update_time(interaction: discord.Interaction, channel: discord.TextCha
             connection.close()
 
 @bot.tree.command(name="list_channels", description="List all channels with auto-delete enabled")
-@app_commands.default_permissions(manage_channels=True)
+@app_commands.checks.has_permissions(manage_channels=True)
 async def list_channels(interaction: discord.Interaction):
     connection = create_connection()
     if connection:
@@ -317,7 +317,7 @@ async def list_channels(interaction: discord.Interaction):
 
 @bot.tree.command(name="purge_user", description="Purge all messages from a single user")
 @app_commands.describe(username="The username of the user whose messages to purge")
-@app_commands.default_permissions(administrator=True)
+@app_commands.checks.has_permissions(moderate_members=True)
 async def purge_user(interaction: discord.Interaction, username: str):
     await interaction.response.defer(ephemeral=True)
     
@@ -423,7 +423,7 @@ import random
 
 @bot.tree.command(name="purge_channel", description="Purge all messages from a specific channel")
 @app_commands.describe(channel="The channel to purge messages from")
-@app_commands.default_permissions(administrator=True)
+@app_commands.checks.has_permissions(moderate_members=True)
 async def purge_channel(interaction: discord.Interaction, channel: discord.TextChannel):
     await interaction.response.defer(ephemeral=True)
     
