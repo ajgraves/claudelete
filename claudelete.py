@@ -325,20 +325,23 @@ async def list_channels(interaction: discord.Interaction):
             connection.close()
 
 @bot.tree.command(name="purge_user", description="Purge all messages from a single user")
-@app_commands.describe(user="The user whose messages to purge (username#discriminator or user ID)")
+@app_commands.describe(user="The user whose messages to purge (exact Discord username or user ID)")
 @app_commands.checks.has_permissions(moderate_members=True)
 async def purge_user(interaction: discord.Interaction, user: str):
     await interaction.response.defer(ephemeral=True)
     
+    member = None
     try:
         # Try to convert the input to a Member object
         try:
+            # First, try to fetch by ID
             member = await interaction.guild.fetch_member(int(user))
         except ValueError:
-            member = discord.utils.get(interaction.guild.members, name=user.split('#')[0], discriminator=user.split('#')[1] if '#' in user else None)
+            # If not an ID, search by exact username
+            member = discord.utils.get(interaction.guild.members, name=user)
         
         if not member:
-            await interaction.followup.send(f"User '{user}' not found.", ephemeral=True)
+            await interaction.followup.send(f"User '{user}' not found. Please provide the exact Discord username or user ID.", ephemeral=True)
             return
 
         try:
