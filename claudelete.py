@@ -48,8 +48,8 @@ class RateLimiter:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         pass
 
-# Create a global rate limiter (50 calls per second as an example, adjust as needed)
-rate_limiter = RateLimiter(max_calls=50, period=1)
+# Create a global rate limiter (30 calls per second as an example, adjust as needed)
+rate_limiter = RateLimiter(max_calls=30, period=1)
 
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -136,58 +136,54 @@ def format_time(minutes: int) -> str:
 async def delete_user_messages(channel: discord.TextChannel, username: str, progress_queue: asyncio.Queue) -> Tuple[int, List[str]]:
     purged_count = 0
     errors = []
-    last_message_id = None
     
     try:
         print(f"Checking channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
     except UnicodeEncodeError:
         print(f"Checking channel with unsupported characters (ID: {channel.id})")
     
+    last_message_id = None
     while True:
         try:
-            messages = []
-            async with rate_limiter:
-                async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
-                    if message.author.name.lower() == username.lower():
-                        messages.append(message)
-                    last_message_id = message.id
+            message_count = 0
+            async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
+                message_count += 1
+                last_message_id = message.id
 
-            if not messages:
+                if message.author.name.lower() == username.lower():
+                    try:
+                        async with rate_limiter:
+                            await message.delete()
+                        purged_count += 1
+                        await progress_queue.put(1)
+                    except discord.errors.NotFound:
+                        pass
+                    except discord.errors.Forbidden:
+                        errors.append(f"No permission to delete messages in {channel.name}")
+                        return purged_count, errors
+                    except discord.errors.HTTPException as e:
+                        if e.status == 429:  # Rate limit error
+                            retry_after = e.retry_after
+                            errors.append(f"Rate limited in {channel.name}. Waiting for {retry_after:.2f} seconds.")
+                            await asyncio.sleep(retry_after)
+                            try:
+                                async with rate_limiter:
+                                    await message.delete()
+                                purged_count += 1
+                                await progress_queue.put(1)
+                            except Exception as retry_e:
+                                errors.append(f"Error after rate limit in {channel.name}: {str(retry_e)}")
+                        else:
+                            errors.append(f"HTTP error in {channel.name}: {str(e)}")
+                    except Exception as e:
+                        errors.append(f"Error in {channel.name}: {str(e)}")
+
+                    await asyncio.sleep(random.uniform(0.5, 1.0))
+
+            if message_count < 100:
+                # We've reached the end of the messages
                 break
 
-            for message in messages:
-                try:
-                    async with rate_limiter:
-                        await message.delete()
-                    purged_count += 1
-                    await progress_queue.put(1)
-                except discord.errors.NotFound:
-                    pass
-                except discord.errors.Forbidden:
-                    errors.append(f"No permission to delete messages in {channel.name}")
-                    return purged_count, errors  # Stop processing this channel
-                except discord.errors.HTTPException as e:
-                    if e.status == 429:  # Rate limit error
-                        retry_after = e.retry_after
-                        errors.append(f"Rate limited in {channel.name}. Waiting for {retry_after:.2f} seconds.")
-                        await asyncio.sleep(retry_after)
-                        # Retry this message
-                        try:
-                            async with rate_limiter:
-                                await message.delete()
-                            purged_count += 1
-                            await progress_queue.put(1)
-                        except Exception as retry_e:
-                            errors.append(f"Error after rate limit in {channel.name}: {str(retry_e)}")
-                    else:
-                        errors.append(f"HTTP error in {channel.name}: {str(e)}")
-                except Exception as e:
-                    errors.append(f"Error in {channel.name}: {str(e)}")
-
-                # Add a small delay between deletions to avoid hitting rate limits
-                await asyncio.sleep(random.uniform(0.5, 1.0))
-
-            # Add a delay between batches to avoid rate limits
             await asyncio.sleep(random.uniform(1, 2))
 
         except discord.errors.Forbidden:
@@ -198,7 +194,6 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                 retry_after = e.retry_after
                 errors.append(f"Rate limited while fetching messages in {channel.name}. Waiting for {retry_after:.2f} seconds.")
                 await asyncio.sleep(retry_after)
-                # The loop will retry automatically
             else:
                 errors.append(f"HTTP error while fetching messages in {channel.name}: {str(e)}")
                 break
@@ -444,7 +439,6 @@ async def purge_user(interaction: discord.Interaction, username: str):
                     async with rate_limiter:
                         await interaction.edit_original_response(content=f"Purging in progress... {total_purged} messages deleted so far.")
                 except discord.errors.NotFound:
-                    # The original response might have been deleted
                     pass
             progress_queue.task_done()
 
