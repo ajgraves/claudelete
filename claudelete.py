@@ -332,16 +332,24 @@ async def purge_user(interaction: discord.Interaction, user: str):
     
     member = None
     try:
-        # Try to convert the input to a Member object
+        # Try to fetch by ID first
         try:
-            # First, try to fetch by ID
             member = await interaction.guild.fetch_member(int(user))
         except ValueError:
-            # If not an ID, search by exact username
+            # If not an ID, search by username
             member = discord.utils.get(interaction.guild.members, name=user)
         
         if not member:
-            await interaction.followup.send(f"User '{user}' not found. Please provide the exact Discord username or user ID.", ephemeral=True)
+            # If still not found, try to get the user object (for users not in the guild)
+            try:
+                user_obj = await bot.fetch_user(int(user))
+                if user_obj:
+                    member = user_obj
+            except (ValueError, discord.errors.NotFound):
+                pass
+
+        if not member:
+            await interaction.followup.send(f"User '{user}' not found. Please provide a valid Discord username or user ID.", ephemeral=True)
             return
 
         try:
