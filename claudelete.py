@@ -327,116 +327,112 @@ async def list_channels(interaction: discord.Interaction):
 @bot.tree.command(name="purge_user", description="Purge all messages from a single user")
 @app_commands.describe(username="The username of the user whose messages to purge")
 @app_commands.checks.has_permissions(moderate_members=True)
-async def purge_user(interaction: discord.Interaction, username: str):
+async def purge_user(interaction: discord.Interaction, user: str):
     await interaction.response.defer(ephemeral=True)
     
     try:
-        print(f"Purging messages from user {username} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
-    except UnicodeEncodeError:
-        print(f"Purging messages from user {username} in a guild with unsupported characters")
+        # Try to convert the input to a Member object
+        try:
+            member = await interaction.guild.fetch_member(int(user))
+        except ValueError:
+            member = discord.utils.get(interaction.guild.members, name=user.split('#')[0], discriminator=user.split('#')[1] if '#' in user else None)
+        
+        if not member:
+            await interaction.followup.send(f"User '{user}' not found.", ephemeral=True)
+            return
+
+        try:
+            print(f"Purging messages from user {member.name}#{member.discriminator} (ID: {member.id}) in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+        except UnicodeEncodeError:
+            print(f"Purging messages from user ID: {member.id} in a guild with unsupported characters")
+    except Exception as e:
+        print(f"Error identifying user: {str(e)}")
+        await interaction.followup.send("An error occurred while identifying the user.", ephemeral=True)
+        return
 
     purged_count = 0
     for channel in interaction.guild.text_channels:
-        last_message_id = None
-        while True:
-            try:
-                messages = []
-                async for message in channel.history(limit=1000, before=discord.Object(id=last_message_id) if last_message_id else None):
-                    if message.author.name == username or str(message.author.id) == username:
-                        messages.append(message)
-                    last_message_id = message.id
+        try:
+            # Check if bot has necessary permissions
+            if not channel.permissions_for(interaction.guild.me).manage_messages:
+                try:
+                    print(f"No permission to manage messages in {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                except UnicodeEncodeError:
+                    print(f"No permission to manage messages in a channel with unsupported characters")
+                continue
 
-                if not messages:
+            last_message_id = None
+            while True:
+                try:
+                    # Fetch messages in batches of 100
+                    messages = await channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None).flatten()
+                    
+                    if not messages:
+                        break
+
+                    # Filter messages by the specified user
+                    user_messages = [msg for msg in messages if msg.author.id == member.id]
+                    
+                    if user_messages:
+                        for message in user_messages:
+                            try:
+                                await message.delete()
+                                purged_count += 1
+                                try:
+                                    print(f"Purged message (ID: {message.id}) in {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                                except UnicodeEncodeError:
+                                    print(f"Purged message (ID: {message.id}) in a channel with unsupported characters")
+                                
+                                # Add a small random delay between deletions
+                                await asyncio.sleep(random.uniform(0.5, 1.0))
+                            except discord.errors.NotFound:
+                                print(f"Message (ID: {message.id}) already deleted")
+                            except discord.errors.HTTPException as e:
+                                if e.status == 429:  # Rate limit error
+                                    retry_after = e.retry_after
+                                    print(f"Rate limited. Waiting for {retry_after:.2f} seconds.")
+                                    await asyncio.sleep(retry_after)
+                                else:
+                                    print(f"HTTP error while deleting message (ID: {message.id}): {e}")
+                                    await asyncio.sleep(1)
+                            except Exception as e:
+                                print(f"Unexpected error while deleting message (ID: {message.id}): {e}")
+                                await asyncio.sleep(1)
+
+                    # Update the last_message_id for pagination
+                    last_message_id = messages[-1].id
+
+                    # Add a delay between batches to avoid rate limits
+                    await asyncio.sleep(random.uniform(1, 2))
+
+                except discord.errors.HTTPException as e:
+                    if e.status == 429:  # Rate limit error
+                        retry_after = e.retry_after
+                        print(f"Rate limited while fetching messages. Waiting for {retry_after:.2f} seconds.")
+                        await asyncio.sleep(retry_after)
+                    else:
+                        print(f"HTTP error while fetching messages: {e}")
+                        break
+                except Exception as e:
+                    print(f"Unexpected error while fetching messages: {e}")
                     break
 
-                for message in messages:
-                    try:
-                        # Check if message is older than 14 days
-                        if (discord.utils.utcnow() - message.created_at).days > 14:
-                            await message.delete()
-                        else:
-                            await channel.purge(limit=1, check=lambda m: m.id == message.id)
-                        
-                        purged_count += 1
-                        try:
-                            print(f"Purged message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                        except UnicodeEncodeError:
-                            print(f"Purged message in a guild/channel with unsupported characters")
-                        
-                        # Add a small random delay between deletions
-                        await asyncio.sleep(random.uniform(0.5, 1.5))
+        except discord.errors.Forbidden:
+            try:
+                print(f"No permission to access messages in {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+            except UnicodeEncodeError:
+                print(f"No permission to access messages in a channel with unsupported characters")
+        except Exception as e:
+            try:
+                print(f"Error processing channel {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {e}")
+            except UnicodeEncodeError:
+                print(f"Error processing a channel with unsupported characters: {e}")
 
-                    except discord.errors.NotFound:
-                        try:
-                            print(f"Message already purged in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                        except UnicodeEncodeError:
-                            print(f"Message already purged in a guild/channel with unsupported characters")
-                        continue
-                    except discord.errors.Forbidden:
-                        await interaction.followup.send(f"I don't have permission to delete messages in {channel.name}.", ephemeral=True)
-                        try:
-                            print(f"No permission to delete messages in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                        except UnicodeEncodeError:
-                            print(f"No permission to delete messages in a guild/channel with unsupported characters")
-                        break  # Move to the next channel
-                    except discord.errors.HTTPException as e:
-                        if e.status == 429:  # This is a rate limit error
-                            retry_after = e.retry_after
-                            await interaction.followup.send(f"Rate limited. Waiting for {retry_after:.2f} seconds before continuing.", ephemeral=True)
-                            try:
-                                print(f"Rate limited in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Waiting for {retry_after:.2f} seconds.")
-                            except UnicodeEncodeError:
-                                print(f"Rate limited in a guild/channel with unsupported characters. Waiting for {retry_after:.2f} seconds.")
-                            await asyncio.sleep(retry_after)
-                            continue
-                        elif e.status == 503:
-                            await interaction.followup.send(f"Discord service unavailable. Retrying in 60 seconds.", ephemeral=True)
-                            try:
-                                print(f"HTTP 503 error in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
-                            except UnicodeEncodeError:
-                                print(f"HTTP 503 error in a guild/channel with unsupported characters: {str(e)}")
-                            await asyncio.sleep(60)  # Wait 60 seconds before retrying
-                            continue
-                        else:
-                            await interaction.followup.send(f"An error occurred while purging a message in {channel.name}: {str(e)}", ephemeral=True)
-                            try:
-                                print(f"Error purging message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
-                            except UnicodeEncodeError:
-                                print(f"Error purging message in a guild/channel with unsupported characters: {str(e)}")
-                            await asyncio.sleep(5)  # Wait 5 seconds before trying the next message
-                    except Exception as e:
-                        await interaction.followup.send(f"An unexpected error occurred: {str(e)}", ephemeral=True)
-                        print(f"Unexpected error: {str(e)}")
-                        continue
-
-                # Add a longer delay between batches
-                await asyncio.sleep(random.uniform(2, 4))
-
-            except discord.errors.Forbidden:
-                await interaction.followup.send(f"I don't have permission to access messages in {channel.name}. Skipping this channel.", ephemeral=True)
-                try:
-                    print(f"No permission to access messages in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                except UnicodeEncodeError:
-                    print(f"No permission to access messages in a guild/channel with unsupported characters")
-                break  # Move to the next channel
-            except discord.errors.HTTPException as e:
-                await interaction.followup.send(f"An error occurred while accessing messages in {channel.name}: {str(e)}", ephemeral=True)
-                try:
-                    print(f"Error accessing messages in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
-                except UnicodeEncodeError:
-                    print(f"Error accessing messages in a guild/channel with unsupported characters: {str(e)}")
-                await asyncio.sleep(5)  # Wait 5 seconds before moving to the next channel
-                break  # Move to the next channel
-            except Exception as e:
-                await interaction.followup.send(f"An unexpected error occurred while accessing messages: {str(e)}", ephemeral=True)
-                print(f"Unexpected error while accessing messages: {str(e)}")
-                break  # Move to the next channel
-
-    await interaction.followup.send(f"Purged {purged_count} messages from user {username}.", ephemeral=True)
+    await interaction.followup.send(f"Purged {purged_count} messages from user {member.name}#{member.discriminator}.", ephemeral=True)
     try:
-        print(f"Purged {purged_count} messages from user {username} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+        print(f"Purged {purged_count} messages from user {member.name}#{member.discriminator} (ID: {member.id}) in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
     except UnicodeEncodeError:
-        print(f"Purged {purged_count} messages from user {username} in a guild with unsupported characters")
+        print(f"Purged {purged_count} messages from user ID: {member.id} in a guild with unsupported characters")
 
 @bot.tree.command(name="purge_channel", description="Purge all messages from a specific channel")
 @app_commands.describe(channel="The channel to purge messages from")
