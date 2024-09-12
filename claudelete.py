@@ -17,6 +17,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 
+## Class definitions
 class AutoDeleteBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix='!', intents=intents)
@@ -26,6 +27,29 @@ class AutoDeleteBot(commands.Bot):
         print(f"Synced slash commands for {self.user}")
 
 bot = AutoDeleteBot()
+
+class RateLimiter:
+    def __init__(self, max_calls: int, period: float):
+        self.max_calls = max_calls
+        self.period = period
+        self.calls = []
+        self.lock = asyncio.Lock()
+
+    async def __aenter__(self):
+        async with self.lock:
+            now = time.time()
+            self.calls = [t for t in self.calls if now - t < self.period]
+            if len(self.calls) >= self.max_calls:
+                sleep_time = self.period - (now - self.calls[0])
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+            self.calls.append(time.time())
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+# Create a global rate limiter (50 calls per second as an example, adjust as needed)
+rate_limiter = RateLimiter(max_calls=50, period=1)
 
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -114,7 +138,6 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
     errors = []
     last_message_id = None
     
-    # Print the channel being checked
     try:
         print(f"Checking channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
     except UnicodeEncodeError:
@@ -123,17 +146,19 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
     while True:
         try:
             messages = []
-            async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
-                if message.author.name.lower() == username.lower():
-                    messages.append(message)
-                last_message_id = message.id
+            async with rate_limiter:
+                async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
+                    if message.author.name.lower() == username.lower():
+                        messages.append(message)
+                    last_message_id = message.id
 
             if not messages:
                 break
 
             for message in messages:
                 try:
-                    await message.delete()
+                    async with rate_limiter:
+                        await message.delete()
                     purged_count += 1
                     await progress_queue.put(1)
                 except discord.errors.NotFound:
@@ -148,7 +173,8 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                         await asyncio.sleep(retry_after)
                         # Retry this message
                         try:
-                            await message.delete()
+                            async with rate_limiter:
+                                await message.delete()
                             purged_count += 1
                             await progress_queue.put(1)
                         except Exception as retry_e:
@@ -415,7 +441,8 @@ async def purge_user(interaction: discord.Interaction, username: str):
             total_purged += count
             if total_purged % 10 == 0:  # Update every 10 messages
                 try:
-                    await interaction.edit_original_response(content=f"Purging in progress... {total_purged} messages deleted so far.")
+                    async with rate_limiter:
+                        await interaction.edit_original_response(content=f"Purging in progress... {total_purged} messages deleted so far.")
                 except discord.errors.NotFound:
                     # The original response might have been deleted
                     pass
@@ -445,16 +472,18 @@ async def purge_user(interaction: discord.Interaction, username: str):
     except asyncio.CancelledError:
         pass
 
-    if total_purged > 0:
-        await interaction.edit_original_response(content=f"Purged {total_purged} messages from user '{username}'.")
-    else:
-        await interaction.edit_original_response(content=f"No messages found from user '{username}' to purge.")
+    async with rate_limiter:
+        if total_purged > 0:
+            await interaction.edit_original_response(content=f"Purged {total_purged} messages from user '{username}'.")
+        else:
+            await interaction.edit_original_response(content=f"No messages found from user '{username}' to purge.")
 
     if all_errors:
         error_message = "\n".join(all_errors[:10])  # Limit to first 10 errors
         if len(all_errors) > 10:
             error_message += f"\n... and {len(all_errors) - 10} more errors."
-        await interaction.followup.send(f"Encountered some errors during purge:\n{error_message}", ephemeral=True)
+        async with rate_limiter:
+            await interaction.followup.send(f"Encountered some errors during purge:\n{error_message}", ephemeral=True)
 
     try:
         print(f"Purged {total_purged} messages from user '{username.encode('utf-8', 'replace').decode('utf-8')}' in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
