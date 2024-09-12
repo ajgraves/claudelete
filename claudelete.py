@@ -130,22 +130,46 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                     await message.delete()
                     purged_count += 1
                     await progress_queue.put(1)
-                    await asyncio.sleep(random.uniform(0.5, 1.0))
                 except discord.errors.NotFound:
                     pass
+                except discord.errors.Forbidden:
+                    errors.append(f"No permission to delete messages in {channel.name}")
+                    return purged_count, errors  # Stop processing this channel
                 except discord.errors.HTTPException as e:
                     if e.status == 429:  # Rate limit error
-                        await asyncio.sleep(e.retry_after)
+                        retry_after = e.retry_after
+                        errors.append(f"Rate limited in {channel.name}. Waiting for {retry_after:.2f} seconds.")
+                        await asyncio.sleep(retry_after)
+                        # Retry this message
+                        try:
+                            await message.delete()
+                            purged_count += 1
+                            await progress_queue.put(1)
+                        except Exception as retry_e:
+                            errors.append(f"Error after rate limit in {channel.name}: {str(retry_e)}")
                     else:
                         errors.append(f"HTTP error in {channel.name}: {str(e)}")
                 except Exception as e:
                     errors.append(f"Error in {channel.name}: {str(e)}")
 
+                # Add a small delay between deletions to avoid hitting rate limits
+                await asyncio.sleep(random.uniform(0.5, 1.0))
+
+            # Add a delay between batches to avoid rate limits
             await asyncio.sleep(random.uniform(1, 2))
 
         except discord.errors.Forbidden:
             errors.append(f"No permission to access messages in {channel.name}")
             break
+        except discord.errors.HTTPException as e:
+            if e.status == 429:  # Rate limit error
+                retry_after = e.retry_after
+                errors.append(f"Rate limited while fetching messages in {channel.name}. Waiting for {retry_after:.2f} seconds.")
+                await asyncio.sleep(retry_after)
+                # The loop will retry automatically
+            else:
+                errors.append(f"HTTP error while fetching messages in {channel.name}: {str(e)}")
+                break
         except Exception as e:
             errors.append(f"Unexpected error in {channel.name}: {str(e)}")
             break
