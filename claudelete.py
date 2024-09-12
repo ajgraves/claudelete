@@ -114,6 +114,12 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
     errors = []
     last_message_id = None
     
+    # Print the channel being checked
+    try:
+        print(f"Checking channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
+    except UnicodeEncodeError:
+        print(f"Checking channel with unsupported characters (ID: {channel.id})")
+    
     while True:
         try:
             messages = []
