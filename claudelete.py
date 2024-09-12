@@ -372,18 +372,22 @@ async def purge_user(interaction: discord.Interaction, username: str):
         while True:
             try:
                 messages = []
-                async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
-                    if message.author.name == username:
+                async for message in channel.history(limit=1000, before=discord.Object(id=last_message_id) if last_message_id else None):
+                    if message.author.name == username or str(message.author.id) == username:
                         messages.append(message)
+                    last_message_id = message.id
 
                 if not messages:
                     break
 
-                last_message_id = messages[-1].id
-
                 for message in messages:
                     try:
-                        await message.delete()
+                        # Check if message is older than 14 days
+                        if (discord.utils.utcnow() - message.created_at).days > 14:
+                            await message.delete()
+                        else:
+                            await channel.purge(limit=1, check=lambda m: m.id == message.id)
+                        
                         purged_count += 1
                         try:
                             print(f"Purged message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
@@ -431,21 +435,9 @@ async def purge_user(interaction: discord.Interaction, username: str):
                             except UnicodeEncodeError:
                                 print(f"Error purging message in a guild/channel with unsupported characters: {str(e)}")
                             await asyncio.sleep(5)  # Wait 5 seconds before trying the next message
-                    except discord.ConnectionClosed:
-                        await interaction.followup.send(f"Connection to Discord closed. Retrying in 30 seconds.", ephemeral=True)
-                        try:
-                            print(f"Connection closed while purging message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                        except UnicodeEncodeError:
-                            print(f"Connection closed while purging message in a guild/channel with unsupported characters")
-                        await asyncio.sleep(30)  # Wait 30 seconds before retrying
-                        continue
-                    except asyncio.TimeoutError:
-                        await interaction.followup.send(f"Operation timed out. Retrying in 10 seconds.", ephemeral=True)
-                        try:
-                            print(f"Timeout while purging message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                        except UnicodeEncodeError:
-                            print(f"Timeout while purging message in a guild/channel with unsupported characters")
-                        await asyncio.sleep(10)  # Wait 10 seconds before retrying
+                    except Exception as e:
+                        await interaction.followup.send(f"An unexpected error occurred: {str(e)}", ephemeral=True)
+                        print(f"Unexpected error: {str(e)}")
                         continue
 
                 # Add a longer delay between batches
@@ -465,6 +457,10 @@ async def purge_user(interaction: discord.Interaction, username: str):
                 except UnicodeEncodeError:
                     print(f"Error accessing messages in a guild/channel with unsupported characters: {str(e)}")
                 await asyncio.sleep(5)  # Wait 5 seconds before moving to the next channel
+                break  # Move to the next channel
+            except Exception as e:
+                await interaction.followup.send(f"An unexpected error occurred while accessing messages: {str(e)}", ephemeral=True)
+                print(f"Unexpected error while accessing messages: {str(e)}")
                 break  # Move to the next channel
 
     await interaction.followup.send(f"Purged {purged_count} messages from user {username}.", ephemeral=True)
