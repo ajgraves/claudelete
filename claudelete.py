@@ -325,7 +325,7 @@ async def list_channels(interaction: discord.Interaction):
             connection.close()
 
 @bot.tree.command(name="purge_user", description="Purge all messages from a single user")
-@app_commands.describe(username="The username of the user whose messages to purge")
+@app_commands.describe(user="The user whose messages to purge (username#discriminator or user ID)")
 @app_commands.checks.has_permissions(moderate_members=True)
 async def purge_user(interaction: discord.Interaction, user: str):
     await interaction.response.defer(ephemeral=True)
