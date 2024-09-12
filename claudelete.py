@@ -350,16 +350,10 @@ async def purge_user(interaction: discord.Interaction, username: str):
             while True:
                 try:
                     # Fetch messages in batches of 100
-                    messages = await channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None).flatten()
-                    
-                    if not messages:
-                        break
-
-                    # Filter messages by the specified username
-                    user_messages = [msg for msg in messages if msg.author.name.lower() == username.lower()]
-                    
-                    if user_messages:
-                        for message in user_messages:
+                    message_count = 0
+                    async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
+                        message_count += 1
+                        if message.author.name.lower() == username.lower():
                             try:
                                 await message.delete()
                                 purged_count += 1
@@ -384,8 +378,11 @@ async def purge_user(interaction: discord.Interaction, username: str):
                                 print(f"Unexpected error while deleting message (ID: {message.id}): {e}")
                                 await asyncio.sleep(1)
 
-                    # Update the last_message_id for pagination
-                    last_message_id = messages[-1].id
+                        last_message_id = message.id
+
+                    if message_count < 100:
+                        # We've reached the end of the messages
+                        break
 
                     # Add a delay between batches to avoid rate limits
                     await asyncio.sleep(random.uniform(1, 2))
