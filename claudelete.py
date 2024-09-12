@@ -136,6 +136,7 @@ def format_time(minutes: int) -> str:
 async def delete_user_messages(channel: discord.TextChannel, username: str, progress_queue: asyncio.Queue) -> Tuple[int, List[str]]:
     purged_count = 0
     errors = []
+    total_messages_checked = 0
     
     try:
         print(f"Checking channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
@@ -148,6 +149,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
             message_count = 0
             async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
                 message_count += 1
+                total_messages_checked += 1
                 last_message_id = message.id
 
                 if message.author.name.lower() == username.lower():
@@ -156,6 +158,14 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                             await message.delete()
                         purged_count += 1
                         await progress_queue.put(1)
+                        
+                        # Print progress every 10 deleted messages
+                        if purged_count % 10 == 0:
+                            try:
+                                print(f"Progress update - Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}")
+                            except UnicodeEncodeError:
+                                print(f"Progress update - Channel ID: {channel.id}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}")
+                    
                     except discord.errors.NotFound:
                         pass
                     except discord.errors.Forbidden:
@@ -165,6 +175,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                         if e.status == 429:  # Rate limit error
                             retry_after = e.retry_after
                             errors.append(f"Rate limited in {channel.name}. Waiting for {retry_after:.2f} seconds.")
+                            print(f"Rate limit hit. Waiting for {retry_after:.2f} seconds before continuing.")
                             await asyncio.sleep(retry_after)
                             try:
                                 async with rate_limiter:
@@ -184,6 +195,12 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                 # We've reached the end of the messages
                 break
 
+            # Print progress after each batch of 100 messages
+            try:
+                print(f"Batch complete - Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}, Total messages checked: {total_messages_checked}, Total messages deleted: {purged_count}")
+            except UnicodeEncodeError:
+                print(f"Batch complete - Channel ID: {channel.id}, Total messages checked: {total_messages_checked}, Total messages deleted: {purged_count}")
+
             await asyncio.sleep(random.uniform(1, 2))
 
         except discord.errors.Forbidden:
@@ -193,6 +210,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
             if e.status == 429:  # Rate limit error
                 retry_after = e.retry_after
                 errors.append(f"Rate limited while fetching messages in {channel.name}. Waiting for {retry_after:.2f} seconds.")
+                print(f"Rate limit hit while fetching messages. Waiting for {retry_after:.2f} seconds before continuing.")
                 await asyncio.sleep(retry_after)
             else:
                 errors.append(f"HTTP error while fetching messages in {channel.name}: {str(e)}")
@@ -200,6 +218,11 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
         except Exception as e:
             errors.append(f"Unexpected error in {channel.name}: {str(e)}")
             break
+
+    try:
+        print(f"Channel complete - {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id}), Total messages checked: {total_messages_checked}, Total messages deleted: {purged_count}")
+    except UnicodeEncodeError:
+        print(f"Channel complete - Channel ID: {channel.id}, Total messages checked: {total_messages_checked}, Total messages deleted: {purged_count}")
 
     return purged_count, errors
 
@@ -450,6 +473,13 @@ async def purge_user(interaction: discord.Interaction, username: str):
             task = asyncio.create_task(delete_user_messages(channel, username, progress_queue))
             tasks.append(task)
 
+    try:
+        print(f"Starting purge operation for user: {username.encode('utf-8', 'replace').decode('utf-8')}")
+    except UnicodeEncodeError:
+        print(f"Starting purge operation for a user with unsupported characters")
+    
+    print(f"Number of channels to check: {len(tasks)}")
+
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for result in results:
@@ -465,6 +495,8 @@ async def purge_user(interaction: discord.Interaction, username: str):
         await progress_task
     except asyncio.CancelledError:
         pass
+
+    print(f"Purge operation complete. Total messages purged: {total_purged}")
 
     async with rate_limiter:
         if total_purged > 0:
