@@ -23,3 +23,25 @@ The database holds a single table with 4 columns, they are:
 2. **guild_id** - Claudelete supports being used by multiple servers, this column holds the Discord internal numeric value for the Server it is in.
 3. **channel_id** - This is the Discord internal numeric value for the Channel that you've set rules for.
 4. **delete_after** - This is a number, in minutes, that messages should be deleted after.
+
+## Command Reference
+### IMPORTANT NOTE
+You will need to add the "Claudelete" role to every private channel where you want the bot to have access. For public channels, the bot will automatically have access.
+
+### Add a channel to be monitored
+To add a channel to monitor for auto deleting, simply use the `/add_channel` command. You will be prompted for channel name, time, and unit (Minutes, Hours, Days, Weeks).
+
+### Remove a channel from monitoring
+To remove a channel from monitoring, use the `/remove_channel` command. You will be prompted for which channel to remove from monitoring.
+
+### Update the timeframe for auto deleting
+If you want to change the amount of time before posts get deleted, use the `/update_time` command. You will be prompted for channel name, time, and unit (Minutes, Hours, Days, Weeks).
+
+### Show which channels are being monitored
+To see the channels that are being monitored on your server, use the `/list_channels` command.
+
+### Purge a channel of all messages
+You can purge a channel of all messages using the `/purge_channel` command. This will prompt you to select the channel where messages will be purged.
+
+### Purge a user from your server
+You can also purge a user from your server, this will delete all messages sent from that user in all channels where the bot has access. Use the `/purge_user` command. You will be prompted for the user name (Note: This is not the display name, nor is it the numeric user ID assigned by discord).
