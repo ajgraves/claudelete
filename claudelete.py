@@ -325,41 +325,15 @@ async def list_channels(interaction: discord.Interaction):
             connection.close()
 
 @bot.tree.command(name="purge_user", description="Purge all messages from a single user")
-@app_commands.describe(user="The user whose messages to purge (exact Discord username or user ID)")
+@app_commands.describe(username="The username of the user whose messages to purge")
 @app_commands.checks.has_permissions(moderate_members=True)
-async def purge_user(interaction: discord.Interaction, user: str):
+async def purge_user(interaction: discord.Interaction, username: str):
     await interaction.response.defer(ephemeral=True)
     
-    member = None
     try:
-        # Try to fetch by ID first
-        try:
-            member = await interaction.guild.fetch_member(int(user))
-        except ValueError:
-            # If not an ID, search by username
-            member = discord.utils.get(interaction.guild.members, name=user)
-        
-        if not member:
-            # If still not found, try to get the user object (for users not in the guild)
-            try:
-                user_obj = await bot.fetch_user(int(user))
-                if user_obj:
-                    member = user_obj
-            except (ValueError, discord.errors.NotFound):
-                pass
-
-        if not member:
-            await interaction.followup.send(f"User '{user}' not found. Please provide a valid Discord username or user ID.", ephemeral=True)
-            return
-
-        try:
-            print(f"Purging messages from user {member.name}#{member.discriminator} (ID: {member.id}) in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
-        except UnicodeEncodeError:
-            print(f"Purging messages from user ID: {member.id} in a guild with unsupported characters")
-    except Exception as e:
-        print(f"Error identifying user: {str(e)}")
-        await interaction.followup.send("An error occurred while identifying the user.", ephemeral=True)
-        return
+        print(f"Attempting to purge messages from user with username: {username.encode('utf-8', 'replace').decode('utf-8')} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+    except UnicodeEncodeError:
+        print(f"Attempting to purge messages from user with username containing unsupported characters in a guild with unsupported characters")
 
     purged_count = 0
     for channel in interaction.guild.text_channels:
@@ -381,8 +355,8 @@ async def purge_user(interaction: discord.Interaction, user: str):
                     if not messages:
                         break
 
-                    # Filter messages by the specified user
-                    user_messages = [msg for msg in messages if msg.author.id == member.id]
+                    # Filter messages by the specified username
+                    user_messages = [msg for msg in messages if msg.author.name.lower() == username.lower()]
                     
                     if user_messages:
                         for message in user_messages:
@@ -390,9 +364,9 @@ async def purge_user(interaction: discord.Interaction, user: str):
                                 await message.delete()
                                 purged_count += 1
                                 try:
-                                    print(f"Purged message (ID: {message.id}) in {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                                    print(f"Purged message (ID: {message.id}) from {message.author.name.encode('utf-8', 'replace').decode('utf-8')} in {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
                                 except UnicodeEncodeError:
-                                    print(f"Purged message (ID: {message.id}) in a channel with unsupported characters")
+                                    print(f"Purged message (ID: {message.id}) from a user with unsupported characters in a channel with unsupported characters")
                                 
                                 # Add a small random delay between deletions
                                 await asyncio.sleep(random.uniform(0.5, 1.0))
@@ -439,11 +413,18 @@ async def purge_user(interaction: discord.Interaction, user: str):
             except UnicodeEncodeError:
                 print(f"Error processing a channel with unsupported characters: {e}")
 
-    await interaction.followup.send(f"Purged {purged_count} messages from user {member.name}#{member.discriminator}.", ephemeral=True)
-    try:
-        print(f"Purged {purged_count} messages from user {member.name}#{member.discriminator} (ID: {member.id}) in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
-    except UnicodeEncodeError:
-        print(f"Purged {purged_count} messages from user ID: {member.id} in a guild with unsupported characters")
+    if purged_count > 0:
+        await interaction.followup.send(f"Purged {purged_count} messages from user '{username}'.", ephemeral=True)
+        try:
+            print(f"Purged {purged_count} messages from user '{username.encode('utf-8', 'replace').decode('utf-8')}' in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+        except UnicodeEncodeError:
+            print(f"Purged {purged_count} messages from a user with unsupported characters in a guild with unsupported characters")
+    else:
+        await interaction.followup.send(f"No messages found from user '{username}' to purge.", ephemeral=True)
+        try:
+            print(f"No messages found from user '{username.encode('utf-8', 'replace').decode('utf-8')}' to purge in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+        except UnicodeEncodeError:
+            print(f"No messages found from a user with unsupported characters to purge in a guild with unsupported characters")
 
 @bot.tree.command(name="purge_channel", description="Purge all messages from a specific channel")
 @app_commands.describe(channel="The channel to purge messages from")
