@@ -155,7 +155,16 @@ async def delete_old_messages():
                                     print(f'Discord is rate limiting me, I am sleeping for {e.retry_after}...')
                                     await asyncio.sleep(e.retry_after)  # Wait for the recommended retry time
                                 except discord.HTTPException as e:
-                                    if e.status == 503:
+                                    if e.status == 429:  # This is a rate limit error
+                                        retry_after = e.retry_after
+                                        await interaction.followup.send(f"Rate limited. Waiting for {retry_after:.2f} seconds before continuing.", ephemeral=True)
+                                        try:
+                                            print(f"Rate limited in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Waiting for {retry_after:.2f} seconds.")
+                                        except UnicodeEncodeError:
+                                            print(f"Rate limited in a guild/channel with unsupported characters. Waiting for {retry_after:.2f} seconds.")
+                                        await asyncio.sleep(retry_after)
+                                        continue
+                                    elif e.status == 503:
                                         try:
                                             print(f'HTTP 503 error in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}: {e}')
                                         except UnicodeEncodeError:
