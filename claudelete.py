@@ -661,7 +661,8 @@ async def show_logs(interaction: discord.Interaction):
         )
         
         # Format the output as a code block
-        formatted_logs = f"```\n{result.stdout}\n```"
+        #formatted_logs = f"```\n{result.stdout}\n```"
+        formatted_logs = result.stdout
         
         # If the logs are too long, split them into chunks
         if len(formatted_logs) > 2000:
@@ -670,7 +671,7 @@ async def show_logs(interaction: discord.Interaction):
             for chunk in chunks:
                 await interaction.followup.send(f"```\n{chunk}\n```", ephemeral=True)
         else:
-            await interaction.response.send_message(formatted_logs, ephemeral=True)
+            await interaction.response.send_message(f"```\n{formatted_logs}\n```", ephemeral=True)
     
     except subprocess.CalledProcessError as e:
         error_message = f"An error occurred while fetching logs: {e}"
