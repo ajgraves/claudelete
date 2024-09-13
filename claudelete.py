@@ -11,6 +11,7 @@ from MySQLdb import Error
 import time
 import random
 from typing import List, Tuple
+import subprocess
 import cdconfig
 
 intents = discord.Intents.default()
@@ -646,6 +647,37 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
         print(f"Purged {purged_count} messages from channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
     except UnicodeEncodeError:
         print(f"Purged {purged_count} messages from a channel in a guild with unsupported characters")
+
+@bot.tree.command(name="show_logs", description="Show recent logs for the Claudelete bot")
+@app_commands.checks.has_permissions(moderate_members=True)
+async def show_logs(interaction: discord.Interaction):
+    try:
+        # Run the journalctl command and capture its output
+        result = subprocess.run(
+            ["journalctl", "--user-unit", "claudelete-bot", "-n", "20", "--no-pager"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        # Format the output as a code block
+        formatted_logs = f"```\n{result.stdout}\n```"
+        
+        # If the logs are too long, split them into chunks
+        if len(formatted_logs) > 2000:
+            chunks = [formatted_logs[i:i+1990] for i in range(0, len(formatted_logs), 1990)]
+            await interaction.response.send_message("Logs are too long. Sending in multiple messages:", ephemeral=True)
+            for chunk in chunks:
+                await interaction.followup.send(f"```\n{chunk}\n```", ephemeral=True)
+        else:
+            await interaction.response.send_message(formatted_logs, ephemeral=True)
+    
+    except subprocess.CalledProcessError as e:
+        error_message = f"An error occurred while fetching logs: {e}"
+        await interaction.response.send_message(error_message, ephemeral=True)
+    except Exception as e:
+        error_message = f"An unexpected error occurred: {e}"
+        await interaction.response.send_message(error_message, ephemeral=True)
 
 # Check if the bot is alive
 @bot.tree.command(name="ping", description="Check if the bot is responsive")
