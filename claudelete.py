@@ -561,8 +561,7 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
             messages = []
             async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
                 messages.append(message)
-                # Add a small delay between each message fetch to avoid rate limiting
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.05)  # Small delay to avoid rate limits
 
             if not messages:
                 print("No more messages to process. Purge operation complete.")
@@ -574,10 +573,13 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
             print(f"Processing batch #{batch_count} - Messages in batch: {len(messages)}, Total messages checked: {total_messages_checked}")
 
             for index, message in enumerate(messages, 1):
-                while True:
+                delete_success = False
+                retry_count = 0
+                while not delete_success and retry_count < 5:  # Max 5 retries per message
                     try:
                         await message.delete()
                         purged_count += 1
+                        delete_success = True
                         if purged_count % 10 == 0:  # Log every 10 deletions
                             try:
                                 print(f"Progress update - Batch: {batch_count}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
@@ -586,15 +588,12 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                         
                         # Gradually decrease the delay if successful
                         rate_limit_delay = max(0.5, rate_limit_delay * 0.95)
-                        
-                        await asyncio.sleep(rate_limit_delay)
-                        break  # Break the inner loop if successful
                     except discord.errors.NotFound:
+                        delete_success = True  # Message already deleted, consider it a success
                         try:
                             print(f"Message already deleted. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
                         except UnicodeEncodeError:
                             print(f"Message already deleted. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]")
-                        break  # Break the inner loop if message not found
                     except discord.errors.Forbidden:
                         try:
                             print(f"No permission to delete message. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
@@ -611,19 +610,13 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                                 print(f"Rate limited. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]. Waiting for {retry_after:.2f} seconds.")
                             await asyncio.sleep(retry_after)
                             rate_limit_delay = min(5, rate_limit_delay * 1.5)  # Increase delay, max 5 seconds
-                        elif e.status == 503:
-                            try:
-                                print(f"Discord service unavailable. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Retrying in 60 seconds.")
-                            except UnicodeEncodeError:
-                                print(f"Discord service unavailable. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]. Retrying in 60 seconds.")
-                            await asyncio.sleep(60)
                         elif e.code == 50027:  # Invalid Webhook Token
+                            delete_success = True  # Skip this message
                             try:
                                 print(f"Invalid Webhook Token error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Skipping this message.")
                             except UnicodeEncodeError:
                                 print(f"Invalid Webhook Token error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]. Skipping this message.")
                             await interaction.followup.send("Encountered a message with an invalid webhook token. Skipping this message.", ephemeral=True)
-                            break  # Move to the next message
                         else:
                             try:
                                 print(f"HTTP error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
@@ -636,6 +629,16 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                         except UnicodeEncodeError:
                             print(f"Unexpected error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]: {str(e)}")
                         await asyncio.sleep(5)
+                    
+                    retry_count += 1
+                    if not delete_success:
+                        await asyncio.sleep(rate_limit_delay)
+                
+                if not delete_success:
+                    try:
+                        print(f"Failed to delete message after 5 attempts. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                    except UnicodeEncodeError:
+                        print(f"Failed to delete message after 5 attempts. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]")
 
                 if purged_count % 100 == 0:
                     await interaction.followup.send(f"Purged {purged_count} messages so far...", ephemeral=True)
@@ -644,6 +647,7 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                 print(f"Batch #{batch_count} complete - Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
             except UnicodeEncodeError:
                 print(f"Batch #{batch_count} complete - Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: [Encoding Error]")
+            
             # Add a longer delay between batches
             await asyncio.sleep(2)
 
@@ -663,13 +667,6 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                     print(f"Rate limited while fetching messages. Batch: {batch_count}, Channel: [Encoding Error]. Waiting for {retry_after:.2f} seconds.")
                 await asyncio.sleep(retry_after)
                 continue  # Retry this batch
-            elif e.code == 50027:  # Invalid Webhook Token
-                try:
-                    print(f"Invalid Webhook Token error while fetching messages. Batch: {batch_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Skipping this batch.")
-                except UnicodeEncodeError:
-                    print(f"Invalid Webhook Token error while fetching messages. Batch: {batch_count}, Channel: [Encoding Error]. Skipping this batch.")
-                await interaction.followup.send("Encountered messages with invalid webhook tokens. Skipping this batch.", ephemeral=True)
-                continue  # Move to the next batch
             else:
                 try:
                     print(f"Error accessing messages. Batch: {batch_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
