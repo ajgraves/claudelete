@@ -265,12 +265,12 @@ async def delete_old_messages():
                                         try:
                                             print(f'Deleted message in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}...')
                                         except UnicodeEncodeError:
-                                            print(f'Deleted message in a guild/channel with unsupported characters...')
+                                            print(f'Deleted message in a guild/channel with unsupported characters (guild: {guild.id}, channel: {channel.id})...')
                                     except discord.errors.NotFound:
                                         try:
                                             print(f'Message already deleted in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}...')
                                         except UnicodeEncodeError:
-                                            print(f'Message already deleted in a guild/channel with unsupported characters...')
+                                            print(f'Message already deleted in a guild/channel with unsupported characters (guild: {guild.id}, channel: {channel.id})...')
                                     except discord.errors.Forbidden:
                                         try:
                                             print(f'Forbidden to delete message in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}')
@@ -283,26 +283,26 @@ async def delete_old_messages():
                                             try:
                                                 print(f'Rate limited in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}. Waiting for {retry_after} seconds.')
                                             except UnicodeEncodeError:
-                                                print(f'Rate limited in a guild/channel with unsupported characters. Waiting for {retry_after} seconds.')
+                                                print(f'Rate limited in a guild/channel with unsupported characters (guild: {guild.id}, channel: {channel.id}). Waiting for {retry_after} seconds.')
                                             await asyncio.sleep(retry_after)
                                         elif e.status == 503:  # Service Unavailable error
                                             try:
                                                 print(f'Discord service unavailable in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}. Waiting for 60 seconds before retry.')
                                             except UnicodeEncodeError:
-                                                print(f'Discord service unavailable in a guild/channel with unsupported characters. Waiting for 60 seconds before retry.')
+                                                print(f'Discord service unavailable in a guild/channel with unsupported characters (guild: {guild.id}, channel: {channel.id}). Waiting for 60 seconds before retry.')
                                             await asyncio.sleep(60)  # Wait for 60 seconds before retrying
                                             break  # Stop processing this channel and move to the next
                                         else:
                                             try:
                                                 print(f'HTTP error in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}: {e}')
                                             except UnicodeEncodeError:
-                                                print(f'HTTP error in a guild/channel with unsupported characters: {e}')
+                                                print(f'HTTP error in a guild/channel with unsupported characters (guild: {guild.id}, channel: {channel.id}): {e}')
                                             await asyncio.sleep(5)  # Wait for 5 seconds before continuing
                                     except Exception as e:
                                         try:
                                             print(f'Error deleting message in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}: {e}')
                                         except UnicodeEncodeError:
-                                            print(f'Error deleting message in a guild/channel with unsupported characters: {e}')
+                                            print(f'Error deleting message in a guild/channel with unsupported characters (guild: {guild.id}, channel: {channel.id}): {e}')
                                         await asyncio.sleep(5)  # Wait for 5 seconds before continuing
                                     
                                     await asyncio.sleep(1)  # To avoid hitting rate limits
@@ -312,24 +312,24 @@ async def delete_old_messages():
                                 try:
                                     print(f'Rate limited while fetching history in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}. Waiting for {retry_after} seconds.')
                                 except UnicodeEncodeError:
-                                    print(f'Rate limited while fetching history in a guild/channel with unsupported characters. Waiting for {retry_after} seconds.')
+                                    print(f'Rate limited while fetching history in a guild/channel with unsupported characters (guild: {guild.id}, channel: {channel.id}). Waiting for {retry_after} seconds.')
                                 await asyncio.sleep(retry_after)
                             elif e.status == 503:
                                 try:
                                     print(f'Discord service unavailable while fetching history in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}. Waiting for 60 seconds before moving to next channel.')
                                 except UnicodeEncodeError:
-                                    print(f'Discord service unavailable while fetching history in a guild/channel with unsupported characters. Waiting for 60 seconds before moving to next channel.')
+                                    print(f'Discord service unavailable while fetching history in a guild/channel with unsupported characters (guild: {guild.id}, channel: {channel.id}). Waiting for 60 seconds before moving to next channel.')
                                 await asyncio.sleep(60)  # Wait for 60 seconds before moving to the next channel
                             else:
                                 try:
                                     print(f'HTTP error while fetching history in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}: {e}')
                                 except UnicodeEncodeError:
-                                    print(f'HTTP error while fetching history in a guild/channel with unsupported characters: {e}')
+                                    print(f'HTTP error while fetching history in a guild/channel with unsupported characters (guild: {guild.id}, channel: {channel.id}): {e}')
                         except Exception as e:
                             try:
                                 print(f'Error fetching history in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}: {e}')
                             except UnicodeEncodeError:
-                                print(f'Error fetching history in a guild/channel with unsupported characters: {e}')
+                                print(f'Error fetching history in a guild/channel with unsupported characters (guild: {guild.id}, channel: {channel.id}): {e}')
         except Error as e:
             print(f"Error reading from database: {e}")
         finally:
