@@ -56,16 +56,21 @@ rate_limiter = RateLimiter(max_calls=30, period=1)
 
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, MissingPermissions):
-        await interaction.response.send_message(f"You don't have permission to use this command.", ephemeral=True)
-        try:
-            print(f"User {interaction.user.name.encode('utf-8', 'replace').decode('utf-8')} attempted to use command '{interaction.command.name}' without proper permissions in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
-        except UnicodeEncodeError:
-            print(f"User with unsupported characters attempted to use command '{interaction.command.name}' without proper permissions in a guild with unsupported characters")
+    if isinstance(error, app_commands.errors.MissingPermissions):
+        error_message = f"You don't have permission to use this command."
     else:
-        # Handle other types of errors here
-        await interaction.response.send_message(f"An error occurred while processing the command.", ephemeral=True)
-        print(f"An error occurred: {str(error)}")
+        error_message = f"An error occurred while processing the command: {str(error)}"
+    
+    print(f"Command error: {error_message}")
+    
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(error_message, ephemeral=True)
+        else:
+            await interaction.response.send_message(error_message, ephemeral=True)
+    except discord.errors.HTTPException:
+        # If we can't send a message, log it
+        print(f"Failed to send error message to user for command: {interaction.command.name}")
 
 # Database configuration is now in config.py
 
@@ -554,6 +559,7 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
     total_messages_checked = 0
     last_message_id = None
     batch_count = 0
+    history_rate_limit = {"reset_after": 0, "remaining": 100}  # Adjust these values as needed
 
     async def delete_with_rate_limit(message):
         nonlocal purged_count
@@ -583,6 +589,9 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                         rate_limit["reset_after"] = now + retry_after
                         rate_limit["remaining"] = 0
                         await asyncio.sleep(retry_after)
+                    elif e.code == 50027:  # Invalid Webhook Token
+                        print(f"Invalid Webhook Token error. Skipping message.")
+                        return False
                     else:
                         print(f"HTTP error while deleting message: {e}")
                         await asyncio.sleep(1)
@@ -594,14 +603,39 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                 if wait_time > 0:
                     await asyncio.sleep(wait_time)
 
-    while True:
-        batch_count += 1
-        try:
+    try:
+        while True:
+            batch_count += 1
             print(f"Fetching batch #{batch_count} of messages...")
             messages = []
-            async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
-                messages.append(message)
-                await asyncio.sleep(0.05)  # Small delay to avoid rate limits on history fetching
+            
+            # Rate limiting for message history retrieval
+            now = time.time()
+            if now > history_rate_limit["reset_after"]:
+                history_rate_limit["remaining"] = 100  # Reset to default limit
+                history_rate_limit["reset_after"] = now + 60  # Reset after 60 seconds
+            
+            if history_rate_limit["remaining"] <= 0:
+                wait_time = history_rate_limit["reset_after"] - now
+                if wait_time > 0:
+                    print(f"Rate limit reached for message history. Waiting for {wait_time:.2f} seconds.")
+                    await asyncio.sleep(wait_time)
+            
+            try:
+                async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
+                    messages.append(message)
+                    history_rate_limit["remaining"] -= 1
+                    if history_rate_limit["remaining"] <= 0:
+                        break
+                    await asyncio.sleep(0.05)  # Small delay to avoid hitting rate limits too quickly
+            except discord.errors.HTTPException as e:
+                if e.status == 429:  # Rate limit error
+                    retry_after = e.retry_after
+                    print(f"Rate limited while fetching messages. Waiting for {retry_after:.2f} seconds.")
+                    await asyncio.sleep(retry_after)
+                    continue  # Retry this batch
+                else:
+                    raise  # Re-raise the exception if it's not a rate limit error
 
             if not messages:
                 print("No more messages to process. Purge operation complete.")
@@ -634,42 +668,20 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
             # Add a longer delay between batches
             await asyncio.sleep(2)
 
-        except discord.errors.Forbidden:
-            try:
-                print(f"No permission to access messages in the channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Purge operation stopped.")
-            except UnicodeEncodeError:
-                print(f"No permission to access messages in the channel: [Encoding Error]. Purge operation stopped.")
-            await interaction.followup.send(f"I don't have permission to access messages in {channel.name}.", ephemeral=True)
-            return
-        except discord.errors.HTTPException as e:
-            if e.status == 429:  # Rate limit error
-                retry_after = e.retry_after
-                try:
-                    print(f"Rate limited while fetching messages. Batch: {batch_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Waiting for {retry_after:.2f} seconds.")
-                except UnicodeEncodeError:
-                    print(f"Rate limited while fetching messages. Batch: {batch_count}, Channel: [Encoding Error]. Waiting for {retry_after:.2f} seconds.")
-                await asyncio.sleep(retry_after)
-                continue  # Retry this batch
-            else:
-                try:
-                    print(f"Error accessing messages. Batch: {batch_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
-                except UnicodeEncodeError:
-                    print(f"Error accessing messages. Batch: {batch_count}, Channel: [Encoding Error]: {str(e)}")
-                await asyncio.sleep(5)
-                continue  # Retry this batch
-        except Exception as e:
-            try:
-                print(f"Unexpected error while fetching messages. Batch: {batch_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
-            except UnicodeEncodeError:
-                print(f"Unexpected error while fetching messages. Batch: {batch_count}, Channel: [Encoding Error]: {str(e)}")
-            await asyncio.sleep(5)
-            continue  # Retry this batch
+        await interaction.followup.send(f"Purge operation complete. Purged {purged_count} messages from channel {channel.name}.", ephemeral=True)
+        try:
+            print(f"Purge operation complete. Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}, Total messages checked: {total_messages_checked}, Total messages purged: {purged_count}")
+        except UnicodeEncodeError:
+            print(f"Purge operation complete. Channel: [Encoding Error], Total messages checked: {total_messages_checked}, Total messages purged: {purged_count}")
 
-    await interaction.followup.send(f"Purge operation complete. Purged {purged_count} messages from channel {channel.name}.", ephemeral=True)
-    try:
-        print(f"Purge operation complete. Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}, Total messages checked: {total_messages_checked}, Total messages purged: {purged_count}")
-    except UnicodeEncodeError:
-        print(f"Purge operation complete. Channel: [Encoding Error], Total messages checked: {total_messages_checked}, Total messages purged: {purged_count}")
+    except discord.errors.Forbidden:
+        error_message = f"I don't have permission to access or delete messages in {channel.name}."
+        print(error_message)
+        await interaction.followup.send(error_message, ephemeral=True)
+    except Exception as e:
+        error_message = f"An unexpected error occurred: {str(e)}"
+        print(error_message)
+        await interaction.followup.send(error_message, ephemeral=True)
 
 @bot.tree.command(name="show_logs", description="Show recent logs for the Claudelete bot")
 @app_commands.checks.has_permissions(moderate_members=True)
