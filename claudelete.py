@@ -343,12 +343,15 @@ async def delete_old_messages_task():
 
             async def update_progress():
                 nonlocal total_deleted
-                while True:
-                    count = await progress_queue.get()
-                    total_deleted += count
-                    if total_deleted % 100 == 0:
-                        print(f"Total messages deleted so far: {total_deleted}")
-                    progress_queue.task_done()
+                try:
+                    while True:
+                        count = await progress_queue.get()
+                        total_deleted += count
+                        if total_deleted % 100 == 0:
+                            print(f"Total messages deleted so far: {total_deleted}")
+                        progress_queue.task_done()
+                except asyncio.CancelledError:
+                    print("Progress update task cancelled")
 
             progress_task = asyncio.create_task(update_progress())
 
@@ -394,11 +397,13 @@ async def delete_old_messages_task():
                     tasks.append(task)
 
             # Start initial batch of tasks
-            await asyncio.gather(*[process_channel_queue() for _ in range(MAX_CONCURRENT_TASKS)])
+            queue_tasks = [asyncio.create_task(process_channel_queue()) for _ in range(MAX_CONCURRENT_TASKS)]
+            await asyncio.gather(*queue_tasks)
 
             # Wait for all tasks to complete
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
+            # Cancel and wait for the progress task to finish
             progress_task.cancel()
             try:
                 await progress_task
@@ -436,6 +441,14 @@ async def continuous_delete_old_messages():
             print("delete_old_messages task is still running after 1 minute. Starting next iteration anyway.")
         except Exception as e:
             print(f"An error occurred in delete_old_messages task: {e}")
+        finally:
+            # Ensure the task is cancelled if it's still running
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    print("delete_old_messages task cancelled")
         
         end_time = asyncio.get_event_loop().time()
         elapsed_time = end_time - start_time
