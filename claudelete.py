@@ -494,7 +494,7 @@ async def list_channels(interaction: discord.Interaction):
 async def purge_user(interaction: discord.Interaction, username: str):
     await interaction.response.defer(ephemeral=True)
 
-    await interaction.followup.send(f"Beginning purge operation for user: {username}", ephemeral=True)
+    await interaction.followup.send(f"Starting purge operation for user: {username}. **NOTE:** Due to Discord limitations, you may stop getting progress updates about this process. Rest assured, the process will continue running until it successfully completes.", ephemeral=True)
     
     progress_queue = asyncio.Queue()
     total_purged = 0
@@ -574,6 +574,8 @@ async def purge_user(interaction: discord.Interaction, username: str):
 @app_commands.checks.has_permissions(moderate_members=True)
 async def purge_channel(interaction: discord.Interaction, channel: discord.TextChannel):
     await interaction.response.defer(ephemeral=True)
+
+    await interaction.followup.send(f"Starting purge operation for channel: {channel}. **NOTE:** Due to Discord limitations, you may stop getting progress updates about this process. Rest assured, the process will continue running until it successfully completes.", ephemeral=True)
     
     try:
         print(f"Starting purge operation for channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
