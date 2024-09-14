@@ -13,6 +13,7 @@ import random
 from typing import List, Tuple
 import subprocess
 from collections import defaultdict
+import traceback
 import cdconfig
 
 intents = discord.Intents.default()
@@ -254,7 +255,10 @@ async def process_channel(guild, channel, delete_after, progress_queue):
     messages_checked = 0
     utc_now = datetime.now(pytz.utc)
     
-    print(f"Starting to process channel: {channel.name} (ID: {channel.id}) in guild: {guild.name} (ID: {guild.id})")
+    try:
+        print(f"Starting to process channel: {channel.name} (ID: {channel.id}) in guild: {guild.name} (ID: {guild.id})")
+    except UnicodeEncodeError:
+        print(f"Starting to process channel ID: {channel.id} in guild ID: {guild.id}")
 
     try:
         async for message in handle_rate_limits(channel.history(limit=None)):
@@ -287,14 +291,20 @@ async def process_channel(guild, channel, delete_after, progress_queue):
                     await asyncio.sleep(5)
                 
             if delete_count % 10 == 0 and delete_count > 0:
-                print(f"Progress update - Channel: {channel.name} (ID: {channel.id}), Guild: {guild.name} (ID: {guild.id}), Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+                try:
+                    print(f"Progress update - Channel: {channel.name} (ID: {channel.id}), Guild: {guild.name} (ID: {guild.id}), Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+                except UnicodeEncodeError:
+                    print(f"Progress update - Channel ID: {channel.id}, Guild ID: {guild.id}, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
     
     except Forbidden:
         print(f"No permission to access channel {channel.id} in guild {guild.id}")
     except Exception as e:
         print(f"Error processing channel {channel.id} in guild {guild.id}: {e}")
 
-    print(f"Finished processing channel: {channel.name} (ID: {channel.id}) in guild: {guild.name} (ID: {guild.id}). Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+    try:
+        print(f"Finished processing channel: {channel.name} (ID: {channel.id}) in guild: {guild.name} (ID: {guild.id}). Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+    except UnicodeEncodeError:
+        print(f"Finished processing channel ID: {channel.id} in guild ID: {guild.id}. Messages checked: {messages_checked}, Messages deleted: {delete_count}")
     return delete_count, messages_checked
 
 async def handle_rate_limits(history_iterator):
@@ -319,11 +329,17 @@ async def process_channel_wrapper(guild, channel, delete_after, progress_queue):
     async with task_semaphore:
         try:
             channels_in_progress.add(channel.id)
-            print(f"Added channel {channel.id} to channels_in_progress.") # Current set: {channels_in_progress}")
+            try:
+                print(f"Added channel {channel.id} to channels_in_progress.") # Current set: {channels_in_progress}")
+            except UnicodeEncodeError:
+                print(f"Added channel {channel.id} to channels_in_progress. Unable to print full set due to encoding error.")
             return await process_channel(guild, channel, delete_after, progress_queue)
         finally:
             channels_in_progress.remove(channel.id)
-            print(f"Removed channel {channel.id} from channels_in_progress.") # Current set: {channels_in_progress}")
+            try:
+                print(f"Removed channel {channel.id} from channels_in_progress.") # Current set: {channels_in_progress}")
+            except UnicodeEncodeError:
+                print(f"Removed channel {channel.id} from channels_in_progress. Unable to print full set due to encoding error.")
 
 async def delete_old_messages_task():
     print("Starting delete_old_messages_task")
@@ -397,9 +413,15 @@ async def delete_old_messages_task():
                         task = asyncio.create_task(process_channel_wrapper(guild, channel, delete_after, progress_queue))
                         all_tasks.add(task)
                         task.add_done_callback(all_tasks.discard)
-                        print(f"Created task for channel {channel.id}")
+                        try:
+                            print(f"Created task for channel {channel.name} (ID: {channel.id})")
+                        except UnicodeEncodeError:
+                            print(f"Created task for channel ID: {channel.id}")
                     else:
-                        print(f"Channel {channel.name} (ID: {channel.id}) is still being processed. Skipping.")
+                        try:
+                            print(f"Channel {channel.name} (ID: {channel.id}) is still being processed. Skipping.")
+                        except UnicodeEncodeError:
+                            print(f"Channel ID: {channel.id} is still being processed. Skipping.")
 
             # Start initial batch of tasks
             queue_tasks = [asyncio.create_task(process_channel_queue()) for _ in range(MAX_CONCURRENT_TASKS)]
@@ -421,6 +443,7 @@ async def delete_old_messages_task():
                             print(f"Task completed. Messages deleted: {deleted}, Messages checked: {checked}")
                     except Exception as e:
                         print(f"Task error: {e}")
+                        print(f"Traceback: {traceback.format_exc()}")
 
             print(f"Delete old messages task complete. Total messages checked: {total_checked}, Total messages deleted: {total_deleted}")
 
@@ -456,6 +479,7 @@ async def continuous_delete_old_messages():
             print("delete_old_messages task is still running after 1 minute. Starting next iteration anyway.")
         except Exception as e:
             print(f"An error occurred in delete_old_messages task: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
         finally:
             # Ensure the task is cancelled if it's still running
             if not task.done():
