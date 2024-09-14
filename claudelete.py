@@ -738,6 +738,39 @@ async def show_logs(interaction: discord.Interaction):
         error_message = f"An unexpected error occurred: {e}"
         await interaction.response.send_message(error_message, ephemeral=True)
 
+@bot.tree.command(name="lookup_guild", description="Look up a guild by its ID")
+@app_commands.describe(guild_id="The ID of the guild to look up")
+@app_commands.checks.has_permissions(moderate_members=True)
+async def lookup_guild(interaction: discord.Interaction, guild_id: str):
+    try:
+        # Convert the input to an integer
+        guild_id = int(guild_id)
+        
+        # Attempt to fetch the guild
+        guild = bot.get_guild(guild_id)
+        
+        if guild:
+            # Guild found, send the name
+            await interaction.response.send_message(f"The guild with ID {guild_id} is named: {guild.name}", ephemeral=True)
+        else:
+            # Guild not found
+            await interaction.response.send_message(f"No guild found with ID {guild_id}. The bot might not be a member of this guild.", ephemeral=True)
+    
+    except ValueError:
+        # Invalid input (not a number)
+        await interaction.response.send_message("Invalid input. Please provide a valid numeric guild ID.", ephemeral=True)
+    except Exception as e:
+        # Handle any other unexpected errors
+        print(f"Error in lookup_guild command: {str(e)}")
+        await interaction.response.send_message("An error occurred while processing your request.", ephemeral=True)
+
+@lookup_guild.error
+async def lookup_guild_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.errors.MissingPermissions):
+        await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"An error occurred: {str(error)}", ephemeral=True)
+
 # Check if the bot is alive
 @bot.tree.command(name="ping", description="Check if the bot is responsive")
 async def ping(interaction: discord.Interaction):
