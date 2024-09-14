@@ -544,114 +544,152 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
     await interaction.response.defer(ephemeral=True)
     
     try:
-        print(f"Purging all messages from channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+        print(f"Starting purge operation for channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
     except UnicodeEncodeError:
-        print(f"Purging all messages from a channel in a guild with unsupported characters")
+        print(f"Starting purge operation for a channel in a guild with unsupported characters")
 
     purged_count = 0
+    total_messages_checked = 0
     last_message_id = None
+    rate_limit_delay = 0.5  # Start with a 0.5 second delay
+    batch_count = 0
 
     while True:
+        batch_count += 1
         try:
+            print(f"Fetching batch #{batch_count} of messages...")
             messages = []
             async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
                 messages.append(message)
+                # Add a small delay between each message fetch to avoid rate limiting
+                await asyncio.sleep(0.05)
 
             if not messages:
+                print("No more messages to process. Purge operation complete.")
                 break
 
             last_message_id = messages[-1].id
+            total_messages_checked += len(messages)
 
-            for message in messages:
-                try:
-                    await message.delete()
-                    purged_count += 1
-                    try:
-                        print(f"Purged message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                    except UnicodeEncodeError:
-                        print(f"Purged message in a guild/channel with unsupported characters")
-                    
-                    # Add a small random delay between deletions
-                    await asyncio.sleep(random.uniform(0.5, 1.5))
+            print(f"Processing batch #{batch_count} - Messages in batch: {len(messages)}, Total messages checked: {total_messages_checked}")
 
-                except discord.errors.NotFound:
+            for index, message in enumerate(messages, 1):
+                while True:
                     try:
-                        print(f"Message already purged in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                    except UnicodeEncodeError:
-                        print(f"Message already purged in a guild/channel with unsupported characters")
-                    continue
-                except discord.errors.Forbidden:
-                    await interaction.followup.send(f"I don't have permission to delete messages in {channel.name}.", ephemeral=True)
-                    try:
-                        print(f"No permission to delete messages in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                    except UnicodeEncodeError:
-                        print(f"No permission to delete messages in a guild/channel with unsupported characters")
-                    return
-                except discord.errors.HTTPException as e:
-                    if e.status == 429:  # This is a rate limit error
-                        retry_after = e.retry_after
-                        await interaction.followup.send(f"Rate limited. Waiting for {retry_after:.2f} seconds before continuing.", ephemeral=True)
+                        await message.delete()
+                        purged_count += 1
+                        if purged_count % 10 == 0:  # Log every 10 deletions
+                            try:
+                                print(f"Progress update - Batch: {batch_count}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                            except UnicodeEncodeError:
+                                print(f"Progress update - Batch: {batch_count}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: [Encoding Error]")
+                        
+                        # Gradually decrease the delay if successful
+                        rate_limit_delay = max(0.5, rate_limit_delay * 0.95)
+                        
+                        await asyncio.sleep(rate_limit_delay)
+                        break  # Break the inner loop if successful
+                    except discord.errors.NotFound:
                         try:
-                            print(f"Rate limited in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Waiting for {retry_after:.2f} seconds.")
+                            print(f"Message already deleted. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
                         except UnicodeEncodeError:
-                            print(f"Rate limited in a guild/channel with unsupported characters. Waiting for {retry_after:.2f} seconds.")
-                        await asyncio.sleep(retry_after)
-                        continue
-                    elif e.status == 503:
-                        await interaction.followup.send(f"Discord service unavailable. Retrying in 60 seconds.", ephemeral=True)
+                            print(f"Message already deleted. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]")
+                        break  # Break the inner loop if message not found
+                    except discord.errors.Forbidden:
                         try:
-                            print(f"HTTP 503 error in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
+                            print(f"No permission to delete message. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
                         except UnicodeEncodeError:
-                            print(f"HTTP 503 error in a guild/channel with unsupported characters: {str(e)}")
-                        await asyncio.sleep(60)  # Wait 60 seconds before retrying
-                        continue
-                    else:
-                        await interaction.followup.send(f"An error occurred while purging a message in {channel.name}: {str(e)}", ephemeral=True)
+                            print(f"No permission to delete message. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]")
+                        await interaction.followup.send(f"I don't have permission to delete messages in {channel.name}.", ephemeral=True)
+                        return
+                    except discord.errors.HTTPException as e:
+                        if e.status == 429:  # Rate limit error
+                            retry_after = e.retry_after
+                            try:
+                                print(f"Rate limited. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Waiting for {retry_after:.2f} seconds.")
+                            except UnicodeEncodeError:
+                                print(f"Rate limited. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]. Waiting for {retry_after:.2f} seconds.")
+                            await asyncio.sleep(retry_after)
+                            rate_limit_delay = min(5, rate_limit_delay * 1.5)  # Increase delay, max 5 seconds
+                        elif e.status == 503:
+                            try:
+                                print(f"Discord service unavailable. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Retrying in 60 seconds.")
+                            except UnicodeEncodeError:
+                                print(f"Discord service unavailable. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]. Retrying in 60 seconds.")
+                            await asyncio.sleep(60)
+                        elif e.code == 50027:  # Invalid Webhook Token
+                            try:
+                                print(f"Invalid Webhook Token error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Skipping this message.")
+                            except UnicodeEncodeError:
+                                print(f"Invalid Webhook Token error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]. Skipping this message.")
+                            await interaction.followup.send("Encountered a message with an invalid webhook token. Skipping this message.", ephemeral=True)
+                            break  # Move to the next message
+                        else:
+                            try:
+                                print(f"HTTP error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
+                            except UnicodeEncodeError:
+                                print(f"HTTP error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]: {str(e)}")
+                            await asyncio.sleep(5)
+                    except Exception as e:
                         try:
-                            print(f"Error purging message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
+                            print(f"Unexpected error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
                         except UnicodeEncodeError:
-                            print(f"Error purging message in a guild/channel with unsupported characters: {str(e)}")
-                        await asyncio.sleep(5)  # Wait 5 seconds before trying the next message
-                except discord.ConnectionClosed:
-                    await interaction.followup.send(f"Connection to Discord closed. Retrying in 30 seconds.", ephemeral=True)
-                    try:
-                        print(f"Connection closed while purging message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                    except UnicodeEncodeError:
-                        print(f"Connection closed while purging message in a guild/channel with unsupported characters")
-                    await asyncio.sleep(30)  # Wait 30 seconds before retrying
-                    continue
-                except asyncio.TimeoutError:
-                    await interaction.followup.send(f"Operation timed out. Retrying in 10 seconds.", ephemeral=True)
-                    try:
-                        print(f"Timeout while purging message in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                    except UnicodeEncodeError:
-                        print(f"Timeout while purging message in a guild/channel with unsupported characters")
-                    await asyncio.sleep(10)  # Wait 10 seconds before retrying
-                    continue
+                            print(f"Unexpected error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]: {str(e)}")
+                        await asyncio.sleep(5)
 
+                if purged_count % 100 == 0:
+                    await interaction.followup.send(f"Purged {purged_count} messages so far...", ephemeral=True)
+
+            try:
+                print(f"Batch #{batch_count} complete - Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+            except UnicodeEncodeError:
+                print(f"Batch #{batch_count} complete - Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: [Encoding Error]")
             # Add a longer delay between batches
-            await asyncio.sleep(random.uniform(2, 4))
+            await asyncio.sleep(2)
 
         except discord.errors.Forbidden:
-            await interaction.followup.send(f"I don't have permission to access messages in {channel.name}.", ephemeral=True)
             try:
-                print(f"No permission to access messages in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                print(f"No permission to access messages in the channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Purge operation stopped.")
             except UnicodeEncodeError:
-                print(f"No permission to access messages in a guild/channel with unsupported characters")
+                print(f"No permission to access messages in the channel: [Encoding Error]. Purge operation stopped.")
+            await interaction.followup.send(f"I don't have permission to access messages in {channel.name}.", ephemeral=True)
             return
         except discord.errors.HTTPException as e:
-            await interaction.followup.send(f"An error occurred while accessing messages in {channel.name}: {str(e)}", ephemeral=True)
+            if e.status == 429:  # Rate limit error
+                retry_after = e.retry_after
+                try:
+                    print(f"Rate limited while fetching messages. Batch: {batch_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Waiting for {retry_after:.2f} seconds.")
+                except UnicodeEncodeError:
+                    print(f"Rate limited while fetching messages. Batch: {batch_count}, Channel: [Encoding Error]. Waiting for {retry_after:.2f} seconds.")
+                await asyncio.sleep(retry_after)
+                continue  # Retry this batch
+            elif e.code == 50027:  # Invalid Webhook Token
+                try:
+                    print(f"Invalid Webhook Token error while fetching messages. Batch: {batch_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Skipping this batch.")
+                except UnicodeEncodeError:
+                    print(f"Invalid Webhook Token error while fetching messages. Batch: {batch_count}, Channel: [Encoding Error]. Skipping this batch.")
+                await interaction.followup.send("Encountered messages with invalid webhook tokens. Skipping this batch.", ephemeral=True)
+                continue  # Move to the next batch
+            else:
+                try:
+                    print(f"Error accessing messages. Batch: {batch_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
+                except UnicodeEncodeError:
+                    print(f"Error accessing messages. Batch: {batch_count}, Channel: [Encoding Error]: {str(e)}")
+                await asyncio.sleep(5)
+                continue  # Retry this batch
+        except Exception as e:
             try:
-                print(f"Error accessing messages in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} - {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
+                print(f"Unexpected error while fetching messages. Batch: {batch_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
             except UnicodeEncodeError:
-                print(f"Error accessing messages in a guild/channel with unsupported characters: {str(e)}")
-            await asyncio.sleep(5)  # Wait 5 seconds before retrying
+                print(f"Unexpected error while fetching messages. Batch: {batch_count}, Channel: [Encoding Error]: {str(e)}")
+            await asyncio.sleep(5)
+            continue  # Retry this batch
 
-    await interaction.followup.send(f"Purged {purged_count} messages from channel {channel.name}.", ephemeral=True)
+    await interaction.followup.send(f"Purge operation complete. Purged {purged_count} messages from channel {channel.name}.", ephemeral=True)
     try:
-        print(f"Purged {purged_count} messages from channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+        print(f"Purge operation complete. Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}, Total messages checked: {total_messages_checked}, Total messages purged: {purged_count}")
     except UnicodeEncodeError:
-        print(f"Purged {purged_count} messages from a channel in a guild with unsupported characters")
+        print(f"Purge operation complete. Channel: [Encoding Error], Total messages checked: {total_messages_checked}, Total messages purged: {purged_count}")
 
 @bot.tree.command(name="show_logs", description="Show recent logs for the Claudelete bot")
 @app_commands.checks.has_permissions(moderate_members=True)
