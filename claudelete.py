@@ -275,7 +275,7 @@ async def delete_old_messages():
                                         try:
                                             print(f'Forbidden to delete message in {guild.name.encode("utf-8", "replace").decode("utf-8")} - {channel.name.encode("utf-8", "replace").decode("utf-8")}')
                                         except UnicodeEncodeError:
-                                            print(f'Forbidden to delete message in a guild/channel with unsupported characters...')
+                                            print(f'Forbidden to delete message in a guild/channel with unsupported characters (guild: {guild.id}, channel: {channel.id})')
                                         break  # Stop processing this channel
                                     except discord.errors.HTTPException as e:
                                         if e.status == 429:  # Rate limit error
