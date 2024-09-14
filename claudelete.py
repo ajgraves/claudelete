@@ -493,6 +493,8 @@ async def list_channels(interaction: discord.Interaction):
 @app_commands.checks.has_permissions(moderate_members=True)
 async def purge_user(interaction: discord.Interaction, username: str):
     await interaction.response.defer(ephemeral=True)
+
+    await interaction.followup.send(f"Beginning purge operation for user: {username}", ephemeral=True)
     
     progress_queue = asyncio.Queue()
     total_purged = 0
