@@ -559,7 +559,7 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
     try:
         print(f"Starting purge operation for channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
     except UnicodeEncodeError:
-        print(f"Starting purge operation for a channel in a guild with unsupported characters")
+        print(f"Starting purge operation for channel (ID: {channel.id}) in guild (ID: {interaction.guild.id})")
 
     purged_count = 0
     total_messages_checked = 0
@@ -661,7 +661,7 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                     try:
                         print(f"Progress update - Batch: {batch_count}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
                     except UnicodeEncodeError:
-                        print(f"Progress update - Batch: {batch_count}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: [Encoding Error]")
+                        print(f"Progress update - Batch: {batch_count}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel ID: {channel.id}, Guild ID: {interaction.guild.id}")
 
                 if purged_count % 100 == 0:
                     await interaction.followup.send(f"Purged {purged_count} messages so far...", ephemeral=True)
@@ -669,7 +669,7 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
             try:
                 print(f"Batch #{batch_count} complete - Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
             except UnicodeEncodeError:
-                print(f"Batch #{batch_count} complete - Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: [Encoding Error]")
+                print(f"Batch #{batch_count} complete - Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel ID: {channel.id}, Guild ID: {interaction.guild.id}")
             
             # Add a longer delay between batches
             await asyncio.sleep(2)
@@ -678,14 +678,14 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
         try:
             print(f"Purge operation complete. Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}, Total messages checked: {total_messages_checked}, Total messages purged: {purged_count}")
         except UnicodeEncodeError:
-            print(f"Purge operation complete. Channel: [Encoding Error], Total messages checked: {total_messages_checked}, Total messages purged: {purged_count}")
+            print(f"Purge operation complete. Channel ID: {channel.id}, Guild ID: {interaction.guild.id}, Total messages checked: {total_messages_checked}, Total messages purged: {purged_count}")
 
     except discord.errors.Forbidden:
-        error_message = f"I don't have permission to access or delete messages in {channel.name}."
+        error_message = f"I don't have permission to access or delete messages in channel ID: {channel.id}."
         print(error_message)
         await interaction.followup.send(error_message, ephemeral=True)
     except Exception as e:
-        error_message = f"An unexpected error occurred: {str(e)}"
+        error_message = f"An unexpected error occurred in channel ID: {channel.id}, Guild ID: {interaction.guild.id}: {str(e)}"
         print(error_message)
         await interaction.followup.send(error_message, ephemeral=True)
 
