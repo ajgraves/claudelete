@@ -255,9 +255,23 @@ async def delete_old_messages():
                     print(f"Guild does not exist or bot is not in guild (ID: {config['guild_id']})")
                     continue  # Skip to the next config
 
+                # Check guild permissions
+                if not guild.me.guild_permissions.view_channel:
+                    print(f"Bot doesn't have permission to view channels in guild (ID: {config['guild_id']})")
+                    continue  # Skip to the next config
+
                 channel = guild.get_channel(config['channel_id'])
                 if channel is None:
                     print(f"Channel does not exist in guild (Guild ID: {config['guild_id']}, Channel ID: {config['channel_id']})")
+                    continue  # Skip to the next config
+
+                # Check channel permissions
+                if not channel.permissions_for(guild.me).read_messages:
+                    print(f"Bot doesn't have permission to read messages in channel (Guild ID: {config['guild_id']}, Channel ID: {config['channel_id']})")
+                    continue  # Skip to the next config
+
+                if not channel.permissions_for(guild.me).manage_messages:
+                    print(f"Bot doesn't have permission to delete messages in channel (Guild ID: {config['guild_id']}, Channel ID: {config['channel_id']})")
                     continue  # Skip to the next config
 
                 delete_after = timedelta(minutes=config['delete_after'])
@@ -312,6 +326,9 @@ async def delete_old_messages():
                                 await asyncio.sleep(5)  # Wait for 5 seconds before continuing
                             
                             await asyncio.sleep(1)  # To avoid hitting rate limits
+                except discord.errors.Forbidden:
+                    print(f"Lost permission to access channel during operation (Guild ID: {guild.id}, Channel ID: {channel.id})")
+                    continue  # Skip to the next config
                 except discord.errors.HTTPException as e:
                     if e.status == 429:  # Rate limit error
                         retry_after = e.retry_after
