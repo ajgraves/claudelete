@@ -319,11 +319,11 @@ async def process_channel_wrapper(guild, channel, delete_after, progress_queue):
     async with task_semaphore:
         try:
             channels_in_progress.add(channel.id)
-            print(f"Added channel {channel.id} to channels_in_progress. Current set: {channels_in_progress}")
+            print(f"Added channel {channel.id} to channels_in_progress.") # Current set: {channels_in_progress}")
             return await process_channel(guild, channel, delete_after, progress_queue)
         finally:
             channels_in_progress.remove(channel.id)
-            print(f"Removed channel {channel.id} from channels_in_progress. Current set: {channels_in_progress}")
+            print(f"Removed channel {channel.id} from channels_in_progress.") # Current set: {channels_in_progress}")
 
 async def delete_old_messages_task():
     print("Starting delete_old_messages_task")
