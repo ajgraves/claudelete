@@ -338,7 +338,7 @@ async def process_channel_wrapper(guild, channel, delete_after):
     async with task_semaphore:
         channels_in_progress.add(channel.id)
         try:
-            print(f"Added channel {channel.id} to channels_in_progress. Current set: {channels_in_progress}")
+            print(f"Added channel {channel.id} to channels_in_progress.") # Current set: {channels_in_progress}")
         except UnicodeEncodeError:
             print(f"Added channel {channel.id} to channels_in_progress. Unable to print full set due to encoding error.")
         return await process_channel(guild, channel, delete_after)
