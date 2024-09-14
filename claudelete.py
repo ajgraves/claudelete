@@ -254,10 +254,7 @@ async def process_channel(guild, channel, delete_after, progress_queue):
     messages_checked = 0
     utc_now = datetime.now(pytz.utc)
     
-    try:
-        print(f"Processing channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id}) in guild: {guild.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {guild.id})")
-    except UnicodeEncodeError:
-        print(f"Processing channel ID: {channel.id} in guild ID: {guild.id}")
+    print(f"Starting to process channel: {channel.name} (ID: {channel.id}) in guild: {guild.name} (ID: {guild.id})")
 
     try:
         async for message in handle_rate_limits(channel.history(limit=None)):
@@ -273,33 +270,31 @@ async def process_channel(guild, channel, delete_after, progress_queue):
                     await asyncio.sleep(random.uniform(0.5, 2))
                     
                 except NotFound:
-                    pass
+                    print(f"Message not found in channel {channel.id}, guild {guild.id}")
                 except Forbidden:
-                    print(f"Forbidden to delete message in channel ID: {channel.id}, guild ID: {guild.id}")
+                    print(f"Forbidden to delete message in channel {channel.id}, guild {guild.id}")
                     return delete_count, messages_checked
                 except HTTPException as e:
                     if e.status == 429:  # Rate limit error
                         retry_after = e.retry_after
-                        print(f"Rate limited when deleting message in channel ID: {channel.id}, guild ID: {guild.id}. Waiting for {retry_after} seconds.")
+                        print(f"Rate limited when deleting message in channel {channel.id}, guild {guild.id}. Waiting for {retry_after} seconds.")
                         await asyncio.sleep(retry_after)
                     else:
-                        print(f"HTTP error when deleting message in channel ID: {channel.id}, guild ID: {guild.id}: {e}")
+                        print(f"HTTP error when deleting message in channel {channel.id}, guild {guild.id}: {e}")
                         await asyncio.sleep(5)
                 except Exception as e:
-                    print(f"Error deleting message in channel ID: {channel.id}, guild ID: {guild.id}: {e}")
+                    print(f"Error deleting message in channel {channel.id}, guild {guild.id}: {e}")
                     await asyncio.sleep(5)
                 
             if delete_count % 10 == 0 and delete_count > 0:
-                try:
-                    print(f"Progress update - Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id}), Guild: {guild.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {guild.id}), Messages checked: {messages_checked}, Messages deleted: {delete_count}")
-                except UnicodeEncodeError:
-                    print(f"Progress update - Channel ID: {channel.id}, Guild ID: {guild.id}, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+                print(f"Progress update - Channel: {channel.name} (ID: {channel.id}), Guild: {guild.name} (ID: {guild.id}), Messages checked: {messages_checked}, Messages deleted: {delete_count}")
     
     except Forbidden:
-        print(f"No permission to access channel ID: {channel.id} in guild ID: {guild.id}")
+        print(f"No permission to access channel {channel.id} in guild {guild.id}")
     except Exception as e:
-        print(f"Error processing channel ID: {channel.id}, guild ID: {guild.id}: {e}")
+        print(f"Error processing channel {channel.id} in guild {guild.id}: {e}")
 
+    print(f"Finished processing channel: {channel.name} (ID: {channel.id}) in guild: {guild.name} (ID: {guild.id}). Messages checked: {messages_checked}, Messages deleted: {delete_count}")
     return delete_count, messages_checked
 
 async def handle_rate_limits(history_iterator):
@@ -324,11 +319,14 @@ async def process_channel_wrapper(guild, channel, delete_after, progress_queue):
     async with task_semaphore:
         try:
             channels_in_progress.add(channel.id)
+            print(f"Added channel {channel.id} to channels_in_progress. Current set: {channels_in_progress}")
             return await process_channel(guild, channel, delete_after, progress_queue)
         finally:
             channels_in_progress.remove(channel.id)
+            print(f"Removed channel {channel.id} from channels_in_progress. Current set: {channels_in_progress}")
 
 async def delete_old_messages_task():
+    print("Starting delete_old_messages_task")
     connection = create_connection()
     if connection:
         try:
@@ -390,17 +388,23 @@ async def delete_old_messages_task():
 
                 delete_after = timedelta(minutes=config['delete_after'])
                 await channel_queue.put((guild, channel, delete_after))
+                print(f"Added channel {channel.id} to processing queue")
 
             async def process_channel_queue():
                 while not channel_queue.empty():
                     guild, channel, delete_after = await channel_queue.get()
-                    task = asyncio.create_task(process_channel_wrapper(guild, channel, delete_after, progress_queue))
-                    all_tasks.add(task)
-                    task.add_done_callback(all_tasks.discard)
+                    if channel.id not in channels_in_progress:
+                        task = asyncio.create_task(process_channel_wrapper(guild, channel, delete_after, progress_queue))
+                        all_tasks.add(task)
+                        task.add_done_callback(all_tasks.discard)
+                        print(f"Created task for channel {channel.id}")
+                    else:
+                        print(f"Channel {channel.name} (ID: {channel.id}) is still being processed. Skipping.")
 
             # Start initial batch of tasks
             queue_tasks = [asyncio.create_task(process_channel_queue()) for _ in range(MAX_CONCURRENT_TASKS)]
             all_tasks.update(queue_tasks)
+            print(f"Started {len(queue_tasks)} queue processing tasks")
             await asyncio.gather(*queue_tasks)
 
             # Wait for all tasks to complete
@@ -414,6 +418,7 @@ async def delete_old_messages_task():
                             deleted, checked = result
                             total_deleted += deleted
                             total_checked += checked
+                            print(f"Task completed. Messages deleted: {deleted}, Messages checked: {checked}")
                     except Exception as e:
                         print(f"Task error: {e}")
 
@@ -426,12 +431,15 @@ async def delete_old_messages_task():
             for task in all_tasks:
                 if not task.done():
                     task.cancel()
+                    print(f"Cancelled task: {task}")
             
             # Wait for all tasks to finish
             await asyncio.gather(*all_tasks, return_exceptions=True)
+            print("All tasks have finished")
             
             cursor.close()
             connection.close()
+    print("Finished delete_old_messages_task")
 
 async def continuous_delete_old_messages():
     while True:
@@ -462,7 +470,9 @@ async def continuous_delete_old_messages():
         
         # If the task completed in less than 1 minute, wait for the remaining time
         if elapsed_time < 60:
-            await asyncio.sleep(60 - elapsed_time)
+            wait_time = 60 - elapsed_time
+            print(f"Waiting for {wait_time:.2f} seconds before next iteration")
+            await asyncio.sleep(wait_time)
 
         print("delete_old_messages task iteration completed.")
 
