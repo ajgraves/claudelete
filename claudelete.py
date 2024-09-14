@@ -470,15 +470,16 @@ async def purge_user(interaction: discord.Interaction, username: str):
 
     async def update_progress():
         nonlocal total_purged
+        last_update = 0
         while True:
             count = await progress_queue.get()
             total_purged += count
-            if total_purged % 10 == 0:  # Update every 10 messages
+            if total_purged - last_update >= 100:  # Update every 100 messages
                 try:
-                    async with rate_limiter:
-                        await interaction.edit_original_response(content=f"Purging in progress... {total_purged} messages deleted so far.")
-                except discord.errors.NotFound:
-                    pass
+                    await interaction.followup.send(f"Purging in progress... {total_purged} messages deleted so far.", ephemeral=True)
+                    last_update = total_purged
+                except discord.errors.HTTPException as e:
+                    print(f"Failed to send progress update: {e}")
             progress_queue.task_done()
 
     progress_task = asyncio.create_task(update_progress())
@@ -514,18 +515,22 @@ async def purge_user(interaction: discord.Interaction, username: str):
 
     print(f"Purge operation complete. Total messages purged: {total_purged}")
 
-    async with rate_limiter:
+    try:
         if total_purged > 0:
-            await interaction.edit_original_response(content=f"Purged {total_purged} messages from user '{username}'.")
+            await interaction.followup.send(f"Purged {total_purged} messages from user '{username}'.", ephemeral=True)
         else:
-            await interaction.edit_original_response(content=f"No messages found from user '{username}' to purge.")
+            await interaction.followup.send(f"No messages found from user '{username}' to purge.", ephemeral=True)
+    except discord.errors.HTTPException as e:
+        print(f"Failed to send final update: {e}")
 
     if all_errors:
         error_message = "\n".join(all_errors[:10])  # Limit to first 10 errors
         if len(all_errors) > 10:
             error_message += f"\n... and {len(all_errors) - 10} more errors."
-        async with rate_limiter:
+        try:
             await interaction.followup.send(f"Encountered some errors during purge:\n{error_message}", ephemeral=True)
+        except discord.errors.HTTPException as e:
+            print(f"Failed to send error message: {e}")
 
     try:
         print(f"Purged {total_purged} messages from user '{username.encode('utf-8', 'replace').decode('utf-8')}' in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
