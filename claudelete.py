@@ -12,11 +12,13 @@ import time
 import random
 from typing import List, Tuple
 import subprocess
+from collections import defaultdict
 import cdconfig
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
+channel_rate_limits = defaultdict(lambda: {"reset_after": 0, "remaining": 5})
 
 ## Class definitions
 class AutoDeleteBot(commands.Bot):
@@ -551,8 +553,46 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
     purged_count = 0
     total_messages_checked = 0
     last_message_id = None
-    rate_limit_delay = 0.5  # Start with a 0.5 second delay
     batch_count = 0
+
+    async def delete_with_rate_limit(message):
+        nonlocal purged_count
+        rate_limit = channel_rate_limits[channel.id]
+        
+        while True:
+            now = time.time()
+            if now > rate_limit["reset_after"]:
+                rate_limit["remaining"] = 5  # Reset to default limit
+                rate_limit["reset_after"] = now + 5  # Reset after 5 seconds
+            
+            if rate_limit["remaining"] > 0:
+                try:
+                    await message.delete()
+                    rate_limit["remaining"] -= 1
+                    purged_count += 1
+                    return True
+                except discord.errors.NotFound:
+                    return True  # Message already deleted
+                except discord.errors.Forbidden:
+                    print(f"No permission to delete message in channel: {channel.id}")
+                    return False
+                except discord.errors.HTTPException as e:
+                    if e.status == 429:  # Rate limit error
+                        retry_after = e.retry_after
+                        print(f"Rate limited. Waiting for {retry_after:.2f} seconds.")
+                        rate_limit["reset_after"] = now + retry_after
+                        rate_limit["remaining"] = 0
+                        await asyncio.sleep(retry_after)
+                    else:
+                        print(f"HTTP error while deleting message: {e}")
+                        await asyncio.sleep(1)
+                except Exception as e:
+                    print(f"Unexpected error while deleting message: {e}")
+                    await asyncio.sleep(1)
+            else:
+                wait_time = rate_limit["reset_after"] - now
+                if wait_time > 0:
+                    await asyncio.sleep(wait_time)
 
     while True:
         batch_count += 1
@@ -561,7 +601,7 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
             messages = []
             async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
                 messages.append(message)
-                await asyncio.sleep(0.05)  # Small delay to avoid rate limits
+                await asyncio.sleep(0.05)  # Small delay to avoid rate limits on history fetching
 
             if not messages:
                 print("No more messages to process. Purge operation complete.")
@@ -573,72 +613,15 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
             print(f"Processing batch #{batch_count} - Messages in batch: {len(messages)}, Total messages checked: {total_messages_checked}")
 
             for index, message in enumerate(messages, 1):
-                delete_success = False
-                retry_count = 0
-                while not delete_success and retry_count < 5:  # Max 5 retries per message
-                    try:
-                        await message.delete()
-                        purged_count += 1
-                        delete_success = True
-                        if purged_count % 10 == 0:  # Log every 10 deletions
-                            try:
-                                print(f"Progress update - Batch: {batch_count}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                            except UnicodeEncodeError:
-                                print(f"Progress update - Batch: {batch_count}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: [Encoding Error]")
-                        
-                        # Gradually decrease the delay if successful
-                        rate_limit_delay = max(0.5, rate_limit_delay * 0.95)
-                    except discord.errors.NotFound:
-                        delete_success = True  # Message already deleted, consider it a success
-                        try:
-                            print(f"Message already deleted. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                        except UnicodeEncodeError:
-                            print(f"Message already deleted. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]")
-                    except discord.errors.Forbidden:
-                        try:
-                            print(f"No permission to delete message. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
-                        except UnicodeEncodeError:
-                            print(f"No permission to delete message. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]")
-                        await interaction.followup.send(f"I don't have permission to delete messages in {channel.name}.", ephemeral=True)
-                        return
-                    except discord.errors.HTTPException as e:
-                        if e.status == 429:  # Rate limit error
-                            retry_after = e.retry_after
-                            try:
-                                print(f"Rate limited. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Waiting for {retry_after:.2f} seconds.")
-                            except UnicodeEncodeError:
-                                print(f"Rate limited. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]. Waiting for {retry_after:.2f} seconds.")
-                            await asyncio.sleep(retry_after)
-                            rate_limit_delay = min(5, rate_limit_delay * 1.5)  # Increase delay, max 5 seconds
-                        elif e.code == 50027:  # Invalid Webhook Token
-                            delete_success = True  # Skip this message
-                            try:
-                                print(f"Invalid Webhook Token error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}. Skipping this message.")
-                            except UnicodeEncodeError:
-                                print(f"Invalid Webhook Token error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]. Skipping this message.")
-                            await interaction.followup.send("Encountered a message with an invalid webhook token. Skipping this message.", ephemeral=True)
-                        else:
-                            try:
-                                print(f"HTTP error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
-                            except UnicodeEncodeError:
-                                print(f"HTTP error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]: {str(e)}")
-                            await asyncio.sleep(5)
-                    except Exception as e:
-                        try:
-                            print(f"Unexpected error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}: {str(e)}")
-                        except UnicodeEncodeError:
-                            print(f"Unexpected error. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]: {str(e)}")
-                        await asyncio.sleep(5)
-                    
-                    retry_count += 1
-                    if not delete_success:
-                        await asyncio.sleep(rate_limit_delay)
+                success = await delete_with_rate_limit(message)
+                if not success:
+                    print(f"Failed to delete message. Batch: {batch_count}, Message: {index}/{len(messages)}")
                 
-                if not delete_success:
+                if purged_count % 10 == 0:  # Log every 10 deletions
                     try:
-                        print(f"Failed to delete message after 5 attempts. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
+                        print(f"Progress update - Batch: {batch_count}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}")
                     except UnicodeEncodeError:
-                        print(f"Failed to delete message after 5 attempts. Batch: {batch_count}, Message: {index}/{len(messages)}, Channel: [Encoding Error]")
+                        print(f"Progress update - Batch: {batch_count}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}, Channel: [Encoding Error]")
 
                 if purged_count % 100 == 0:
                     await interaction.followup.send(f"Purged {purged_count} messages so far...", ephemeral=True)
