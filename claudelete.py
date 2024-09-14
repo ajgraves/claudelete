@@ -247,7 +247,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     init_database()
-    delete_old_messages.start()
+    bot.loop.create_task(continuous_delete_old_messages())
 
 async def process_channel(guild, channel, delete_after, progress_queue):
     delete_count = 0
@@ -421,11 +421,30 @@ async def delete_old_messages_task():
             cursor.close()
             connection.close()
 
-@tasks.loop(minutes=1)
-async def delete_old_messages():
-    print("Starting delete_old_messages task...")
-    await delete_old_messages_task()
-    print("delete_old_messages task completed.")
+async def continuous_delete_old_messages():
+    while True:
+        start_time = asyncio.get_event_loop().time()
+        print("Starting delete_old_messages task...")
+        
+        # Create a task for delete_old_messages_task
+        task = asyncio.create_task(delete_old_messages_task())
+        
+        # Wait for 1 minute or until the task completes, whichever comes first
+        try:
+            await asyncio.wait_for(task, timeout=60)
+        except asyncio.TimeoutError:
+            print("delete_old_messages task is still running after 1 minute. Starting next iteration anyway.")
+        except Exception as e:
+            print(f"An error occurred in delete_old_messages task: {e}")
+        
+        end_time = asyncio.get_event_loop().time()
+        elapsed_time = end_time - start_time
+        
+        # If the task completed in less than 1 minute, wait for the remaining time
+        if elapsed_time < 60:
+            await asyncio.sleep(60 - elapsed_time)
+
+        print("delete_old_messages task iteration completed.")
 
 def get_text_channels(guild):
     return [channel for channel in guild.channels if isinstance(channel, discord.TextChannel)]
