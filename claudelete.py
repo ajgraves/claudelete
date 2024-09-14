@@ -33,6 +33,9 @@ MAX_CONCURRENT_TASKS = 25
 # Semaphore to limit concurrent tasks
 task_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 
+# Global progress queue
+progress_queue = asyncio.Queue()
+
 ## Class definitions
 class AutoDeleteBot(commands.Bot):
     def __init__(self):
@@ -253,7 +256,7 @@ async def on_ready():
     init_database()
     bot.loop.create_task(continuous_delete_old_messages())
 
-async def process_channel(guild, channel, delete_after, progress_queue):
+async def process_channel(guild, channel, delete_after):
     delete_count = 0
     messages_checked = 0
     utc_now = datetime.now(pytz.utc)
@@ -331,14 +334,26 @@ async def handle_rate_limits(history_iterator):
             print(f"Unexpected error when fetching message history: {e}")
             await asyncio.sleep(5)
 
-async def process_channel_wrapper(guild, channel, delete_after, progress_queue):
+async def process_channel_wrapper(guild, channel, delete_after):
     async with task_semaphore:
         channels_in_progress.add(channel.id)
         try:
-            print(f"Added channel {channel.id} to channels_in_progress.") # Current set: {channels_in_progress}")
+            print(f"Added channel {channel.id} to channels_in_progress. Current set: {channels_in_progress}")
         except UnicodeEncodeError:
             print(f"Added channel {channel.id} to channels_in_progress. Unable to print full set due to encoding error.")
-        return await process_channel(guild, channel, delete_after, progress_queue)
+        return await process_channel(guild, channel, delete_after)
+
+async def update_progress():
+    total_deleted = 0
+    try:
+        while True:
+            count = await progress_queue.get()
+            total_deleted += count
+            if total_deleted % 100 == 0:
+                print(f"Total messages deleted so far: {total_deleted}")
+            progress_queue.task_done()
+    except asyncio.CancelledError:
+        print("Progress update task cancelled")
 
 async def delete_old_messages_task():
     print("Starting delete_old_messages_task")
@@ -349,23 +364,7 @@ async def delete_old_messages_task():
             cursor.execute("SELECT * FROM channel_config")
             configs = cursor.fetchall()
             
-            progress_queue = asyncio.Queue()
-            total_deleted = 0
-            total_checked = 0
-
-            async def update_progress():
-                nonlocal total_deleted
-                try:
-                    while True:
-                        count = await progress_queue.get()
-                        total_deleted += count
-                        if total_deleted % 100 == 0:
-                            print(f"Total messages deleted so far: {total_deleted}")
-                        progress_queue.task_done()
-                except asyncio.CancelledError:
-                    print("Progress update task cancelled")
-
-            progress_task = asyncio.create_task(update_progress())
+            new_tasks = []
 
             for config in configs:
                 channel_id = config['channel_id']
@@ -400,67 +399,61 @@ async def delete_old_messages_task():
                 delete_after = timedelta(minutes=config['delete_after'])
                 
                 if channel.id not in channel_tasks:
-                    task = asyncio.create_task(process_channel_wrapper(guild, channel, delete_after, progress_queue))
+                    task = asyncio.create_task(process_channel_wrapper(guild, channel, delete_after))
                     channel_tasks[channel.id] = task
+                    new_tasks.append(task)
                     try:
                         print(f"Created task for channel {channel.name} (ID: {channel.id})")
                     except UnicodeEncodeError:
                         print(f"Created task for channel ID: {channel.id}")
-                else:
-                    try:
-                        print(f"Channel {channel.name} (ID: {channel.id}) is still being processed. Skipping.")
-                    except UnicodeEncodeError:
-                        print(f"Channel ID: {channel.id} is still being processed. Skipping.")
 
-            # Wait for all tasks to complete or for 60 seconds, whichever comes first
-            try:
-                done, pending = await asyncio.wait(list(channel_tasks.values()), timeout=60, return_when=asyncio.ALL_COMPLETED)
-                for task in done:
-                    try:
-                        result = task.result()
-                        if isinstance(result, tuple):
-                            deleted, checked = result
-                            total_deleted += deleted
-                            total_checked += checked
-                            print(f"Task completed. Messages deleted: {deleted}, Messages checked: {checked}")
-                    except Exception as e:
-                        print(f"Task error: {e}")
-                        print(f"Traceback: {traceback.format_exc()}")
-            except asyncio.TimeoutError:
-                print("Some tasks are still running after 60 seconds. They will continue in the background.")
+            # Wait for new tasks to complete or for 60 seconds, whichever comes first
+            if new_tasks:
+                try:
+                    done, pending = await asyncio.wait(new_tasks, timeout=60, return_when=asyncio.ALL_COMPLETED)
+                    for task in done:
+                        try:
+                            result = task.result()
+                            if isinstance(result, tuple):
+                                deleted, checked = result
+                                print(f"Task completed. Messages deleted: {deleted}, Messages checked: {checked}")
+                        except Exception as e:
+                            print(f"Task error: {e}")
+                            print(f"Traceback: {traceback.format_exc()}")
+                except asyncio.TimeoutError:
+                    print("Some tasks are still running after 60 seconds. They will continue in the background.")
 
-            print(f"Delete old messages task iteration complete. Total messages checked: {total_checked}, Total messages deleted: {total_deleted}")
+            print(f"Delete old messages task iteration complete. Channels still being processed: {len(channels_in_progress)}")
 
         except Error as e:
             print(f"Error reading from database: {e}")
         finally:
-            progress_task.cancel()
-            try:
-                await progress_task
-            except asyncio.CancelledError:
-                pass
-            
             cursor.close()
             connection.close()
     print("Finished delete_old_messages_task iteration")
 
 async def continuous_delete_old_messages():
-    while True:
-        start_time = asyncio.get_event_loop().time()
-        print("Starting delete_old_messages task...")
-        
-        await delete_old_messages_task()
-        
-        end_time = asyncio.get_event_loop().time()
-        elapsed_time = end_time - start_time
-        
-        # If the task completed in less than 1 minute, wait for the remaining time
-        if elapsed_time < 60:
-            wait_time = 60 - elapsed_time
-            print(f"Waiting for {wait_time:.2f} seconds before next iteration")
-            await asyncio.sleep(wait_time)
+    progress_task = asyncio.create_task(update_progress())
+    try:
+        while True:
+            start_time = asyncio.get_event_loop().time()
+            print("Starting delete_old_messages task...")
+            
+            await delete_old_messages_task()
+            
+            end_time = asyncio.get_event_loop().time()
+            elapsed_time = end_time - start_time
+            
+            # If the task completed in less than 1 minute, wait for the remaining time
+            if elapsed_time < 60:
+                wait_time = 60 - elapsed_time
+                print(f"Waiting for {wait_time:.2f} seconds before next iteration")
+                await asyncio.sleep(wait_time)
 
-        print("delete_old_messages task iteration completed.")
+            print("delete_old_messages task iteration completed.")
+    finally:
+        progress_task.cancel()
+        await progress_task
 
 def get_text_channels(guild):
     return [channel for channel in guild.channels if isinstance(channel, discord.TextChannel)]
