@@ -336,7 +336,7 @@ async def delete_old_messages_task():
             cursor.execute("SELECT * FROM channel_config")
             configs = cursor.fetchall()
             
-            tasks = []
+            all_tasks = set()
             progress_queue = asyncio.Queue()
             total_deleted = 0
             total_checked = 0
@@ -354,6 +354,7 @@ async def delete_old_messages_task():
                     print("Progress update task cancelled")
 
             progress_task = asyncio.create_task(update_progress())
+            all_tasks.add(progress_task)
 
             channel_queue = asyncio.Queue()
 
@@ -394,35 +395,41 @@ async def delete_old_messages_task():
                 while not channel_queue.empty():
                     guild, channel, delete_after = await channel_queue.get()
                     task = asyncio.create_task(process_channel_wrapper(guild, channel, delete_after, progress_queue))
-                    tasks.append(task)
+                    all_tasks.add(task)
+                    task.add_done_callback(all_tasks.discard)
 
             # Start initial batch of tasks
             queue_tasks = [asyncio.create_task(process_channel_queue()) for _ in range(MAX_CONCURRENT_TASKS)]
+            all_tasks.update(queue_tasks)
             await asyncio.gather(*queue_tasks)
 
             # Wait for all tasks to complete
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            # Cancel and wait for the progress task to finish
-            progress_task.cancel()
-            try:
-                await progress_task
-            except asyncio.CancelledError:
-                pass
-
-            for result in results:
-                if isinstance(result, Exception):
-                    print(f"Task error: {result}")
-                elif result is not None:
-                    deleted, checked = result
-                    total_deleted += deleted
-                    total_checked += checked
+            pending = all_tasks.copy()
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        result = task.result()
+                        if isinstance(result, tuple):
+                            deleted, checked = result
+                            total_deleted += deleted
+                            total_checked += checked
+                    except Exception as e:
+                        print(f"Task error: {e}")
 
             print(f"Delete old messages task complete. Total messages checked: {total_checked}, Total messages deleted: {total_deleted}")
 
         except Error as e:
             print(f"Error reading from database: {e}")
         finally:
+            # Cancel all remaining tasks
+            for task in all_tasks:
+                if not task.done():
+                    task.cancel()
+            
+            # Wait for all tasks to finish
+            await asyncio.gather(*all_tasks, return_exceptions=True)
+            
             cursor.close()
             connection.close()
 
