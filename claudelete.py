@@ -32,7 +32,8 @@ channel_tasks = {}
 MAX_CONCURRENT_TASKS = getattr(cdconfig, 'MAX_CONCURRENT_TASKS', 25)
 
 # Semaphore to limit concurrent tasks
-task_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+#task_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+task_semaphore = ResizableSemaphore(MAX_CONCURRENT_TASKS)
 
 # Global progress queue
 progress_queue = asyncio.Queue()
@@ -45,6 +46,30 @@ last_config_reload_time = 0 # Was 0, BUT it should be the current time, since we
 CONFIG_RELOAD_INTERVAL = getattr(cdconfig, 'CONFIG_RELOAD_INTERVAL', 300)  # Reload config every 5 minutes (adjust as needed in cdconfig.py)
 
 ## Class definitions
+class ResizableSemaphore:
+    def __init__(self, value):
+        self._semaphore = asyncio.Semaphore(value)
+        self._value = value
+
+    async def acquire(self):
+        return await self._semaphore.acquire()
+
+    def release(self):
+        return self._semaphore.release()
+
+    def resize(self, new_value):
+        if new_value > self._value:
+            # If increasing, release additional permits
+            for _ in range(new_value - self._value):
+                self._semaphore.release()
+        elif new_value < self._value:
+            # If decreasing, acquire excess permits
+            async def acquire_excess():
+                for _ in range(self._value - new_value):
+                    await self._semaphore.acquire()
+            asyncio.create_task(acquire_excess())
+        self._value = new_value
+
 class AutoDeleteBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix='!', intents=intents)
@@ -100,13 +125,16 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 
 # Function to reload the configuration
 def reload_config():
-    global last_config_reload_time, TASK_INTERVAL_SECONDS, CONFIG_RELOAD_INTERVAL, MAX_CONCURRENT_TASKS
+    global last_config_reload_time, TASK_INTERVAL_SECONDS, CONFIG_RELOAD_INTERVAL, MAX_CONCURRENT_TASKS, task_semaphore
     current_time = time.time()
     if current_time - last_config_reload_time > CONFIG_RELOAD_INTERVAL:
         importlib.reload(cdconfig)
         TASK_INTERVAL_SECONDS = getattr(cdconfig, 'TASK_INTERVAL_SECONDS', 60)
         CONFIG_RELOAD_INTERVAL = getattr(cdconfig, 'CONFIG_RELOAD_INTERVAL', 300)
-        MAX_CONCURRENT_TASKS = getattr(cdconfig, 'MAX_CONCURRENT_TASKS', 25)
+        new_max_tasks = getattr(cdconfig, 'MAX_CONCURRENT_TASKS', 25)
+        if new_max_tasks != MAX_CONCURRENT_TASKS:
+            task_semaphore.resize(new_max_tasks)
+            MAX_CONCURRENT_TASKS = new_max_tasks
         last_config_reload_time = current_time
         print(f"Configuration reloaded. TASK_INTERVAL_SECONDS is now {TASK_INTERVAL_SECONDS}, CONFIG_RELOAD_INTERVAL is now {CONFIG_RELOAD_INTERVAL}, MAX_CONCURRENT_TASKS is now {MAX_CONCURRENT_TASKS}")
 
