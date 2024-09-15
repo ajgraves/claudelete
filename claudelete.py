@@ -338,8 +338,8 @@ async def process_channel(guild, channel, delete_after):
                         delete_count += 1
                         await progress_queue.put(1)
                         
-                        # Add a random delay between 0.25 and 1 seconds
-                        await asyncio.sleep(random.uniform(0.25, 1))
+                        # Add a random delay between 0. and 1 seconds
+                        await asyncio.sleep(random.uniform(0.5, 1))
                         
                     except NotFound:
                         print(f"Message not found in channel {channel.id}, guild {guild.id}")
