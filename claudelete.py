@@ -14,6 +14,7 @@ from typing import List, Tuple
 import subprocess
 from collections import defaultdict
 import traceback
+import importlib
 import cdconfig
 
 intents = discord.Intents.default()
@@ -37,7 +38,11 @@ task_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 progress_queue = asyncio.Queue()
 
 # How often the bot should check channels.
-TASK_INTERVAL_SECONDS = 2 * 60  # Default to 60 seconds, but you can change this value
+TASK_INTERVAL_SECONDS = getattr(cdconfig, 'TASK_INTERVAL_SECONDS', 60)  # Default to 60 seconds, but you can change this value in cdconfig.py
+
+# Global variable to store the last config reload time
+last_config_reload_time = time.time() # Was 0, BUT it should be the current time, since we've loaded the configuration on program load
+CONFIG_RELOAD_INTERVAL = getattr(cdconfig, 'CONFIG_RELOAD_INTERVAL', 300)  # Reload config every 5 minutes (adjust as needed in cdconfig.py)
 
 ## Class definitions
 class AutoDeleteBot(commands.Bot):
@@ -92,6 +97,17 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
         print(f"Failed to send error message to user for command: {interaction.command.name}")
 
 # Database configuration is now in config.py
+
+# Function to reload the configuration
+def reload_config():
+    global last_config_reload_time, TASK_INTERVAL_SECONDS
+    current_time = time.time()
+    if current_time - last_config_reload_time > CONFIG_RELOAD_INTERVAL:
+        importlib.reload(cdconfig)
+        TASK_INTERVAL_SECONDS = getattr(cdconfig, 'TASK_INTERVAL_SECONDS', 60)
+        CONFIG_RELOAD_INTERVAL = getattr(cdconfig, 'CONFIG_RELOAD_INTERVAL', 300)
+        last_config_reload_time = current_time
+        print(f"Configuration reloaded. TASK_INTERVAL_SECONDS is now {TASK_INTERVAL_SECONDS}, CONFIG_RELOAD_INTERVAL is now {CONFIG_RELOAD_INTERVAL}")
 
 def create_connection():
     try:
@@ -264,10 +280,12 @@ async def process_channel(guild, channel, delete_after):
     messages_checked = 0
     utc_now = datetime.now(pytz.utc)
     
+    '''
     try:
         print(f"Starting to process channel: {channel.name} (ID: {channel.id}) in guild: {guild.name} (ID: {guild.id})")
     except UnicodeEncodeError:
         print(f"Starting to process channel ID: {channel.id} in guild ID: {guild.id}")
+    '''
 
     try:
         async for message in handle_rate_limits(channel.history(limit=None)):
@@ -310,11 +328,13 @@ async def process_channel(guild, channel, delete_after):
     except Exception as e:
         print(f"Error processing channel {channel.id} in guild {guild.id}: {e}")
 
+    '''
     try:
         print(f"Finished processing channel: {channel.name} (ID: {channel.id}) in guild: {guild.name} (ID: {guild.id}). Messages checked: {messages_checked}, Messages deleted: {delete_count}")
     except UnicodeEncodeError:
         print(f"Finished processing channel ID: {channel.id} in guild ID: {guild.id}. Messages checked: {messages_checked}, Messages deleted: {delete_count}")
-    
+    '''
+
     channels_in_progress.remove(channel.id)
     del channel_tasks[channel.id]
     return delete_count, messages_checked
@@ -340,10 +360,12 @@ async def handle_rate_limits(history_iterator):
 async def process_channel_wrapper(guild, channel, delete_after):
     async with task_semaphore:
         channels_in_progress.add(channel.id)
+        '''
         try:
             print(f"Added channel {channel.id} to channels_in_progress.") # Current set: {channels_in_progress}")
         except UnicodeEncodeError:
             print(f"Added channel {channel.id} to channels_in_progress. Unable to print full set due to encoding error.")
+        '''
         return await process_channel(guild, channel, delete_after)
 
 async def update_progress():
@@ -405,12 +427,14 @@ async def delete_old_messages_task():
                     task = asyncio.create_task(process_channel_wrapper(guild, channel, delete_after))
                     channel_tasks[channel.id] = task
                     new_tasks.append(task)
+                    '''
                     try:
                         print(f"Created task for channel {channel.name} (ID: {channel.id})")
                     except UnicodeEncodeError:
                         print(f"Created task for channel ID: {channel.id}")
+                    '''
 
-            # Wait for new tasks to complete or for 60 seconds, whichever comes first
+            # Wait for new tasks to complete or for TASK_INTERVAL_SECONDS seconds, whichever comes first
             if new_tasks:
                 try:
                     done, pending = await asyncio.wait(new_tasks, timeout=TASK_INTERVAL_SECONDS, return_when=asyncio.ALL_COMPLETED)
@@ -439,6 +463,7 @@ async def continuous_delete_old_messages():
     progress_task = asyncio.create_task(update_progress())
     try:
         while True:
+            reload_config()  # This will check and reload the config if necessary
             start_time = asyncio.get_event_loop().time()
             print(f"Starting delete_old_messages task...")
             

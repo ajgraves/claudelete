@@ -1,3 +1,4 @@
+# This is your database configuration, update the relevant variables
 DB_CONFIG = {
     'host': 'localhost',
     'user': 'user',
@@ -5,4 +6,11 @@ DB_CONFIG = {
     'db': 'dbname'
 }
 
+# Bot token, taken from your Discord developer account
 BOT_TOKEN = 'YOUR_BOT_TOKEN'
+
+# TASK_INTERVAL_SECONDS tells Claudelete how often to check channels for updates
+TASK_INTERVAL_SECONDS = 60
+
+# CONFIG_RELOAD_INTERVAL tells Claudelete how often it should check cdconfig.py for updates
+CONFIG_RELOAD_INTERVAL = 300
