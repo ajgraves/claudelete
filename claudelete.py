@@ -31,10 +31,6 @@ channel_tasks = {}
 # Configurable maximum number of concurrent tasks
 MAX_CONCURRENT_TASKS = getattr(cdconfig, 'MAX_CONCURRENT_TASKS', 25)
 
-# Semaphore to limit concurrent tasks
-#task_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
-task_semaphore = ResizableSemaphore(MAX_CONCURRENT_TASKS)
-
 # Global progress queue
 progress_queue = asyncio.Queue()
 
@@ -69,6 +65,10 @@ class ResizableSemaphore:
                     await self._semaphore.acquire()
             asyncio.create_task(acquire_excess())
         self._value = new_value
+
+# Semaphore to limit concurrent tasks
+#task_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+task_semaphore = ResizableSemaphore(MAX_CONCURRENT_TASKS)
 
 class AutoDeleteBot(commands.Bot):
     def __init__(self):
