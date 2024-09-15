@@ -321,17 +321,17 @@ async def process_channel(guild, channel, delete_after):
 
     while True:
         try:
-            print(f"Fetching batch for channel {channel.id}, guild {guild.id}")
+            #print(f"Fetching batch for channel {channel.id}, guild {guild.id}")
             fetch_start_time = time.time()
             message_batch = []
             async for message in handle_rate_limits(channel.history(limit=500, before=discord.Object(id=last_message_id) if last_message_id else None)):
                 message_batch.append(message)
                 messages_checked += 1
             fetch_end_time = time.time()
-            print(f"Fetched {len(message_batch)} messages in {fetch_end_time - fetch_start_time:.2f} seconds")
+            #print(f"Fetched {len(message_batch)} messages in {fetch_end_time - fetch_start_time:.2f} seconds")
 
             if not message_batch:
-                print(f"No more messages to process in channel {channel.id}, guild {guild.id}")
+                #print(f"No more messages to process in channel {channel.id}, guild {guild.id}")
                 break
 
             last_message_id = message_batch[-1].id
@@ -386,7 +386,7 @@ async def process_channel(guild, channel, delete_after):
             print(f"Error processing channel {channel.id} in guild {guild.id}: {e}")
             break
 
-    print(f"Finished processing channel {channel.id}, guild {guild.id}. Total messages checked: {messages_checked}, Total messages deleted: {delete_count}")
+    #print(f"Finished processing channel {channel.id}, guild {guild.id}. Total messages checked: {messages_checked}, Total messages deleted: {delete_count}")
     channels_in_progress.remove(channel.id)
     del channel_tasks[channel.id]
     return delete_count, messages_checked
