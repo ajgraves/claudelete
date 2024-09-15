@@ -41,7 +41,7 @@ progress_queue = asyncio.Queue()
 TASK_INTERVAL_SECONDS = getattr(cdconfig, 'TASK_INTERVAL_SECONDS', 60)  # Default to 60 seconds, but you can change this value in cdconfig.py
 
 # Global variable to store the last config reload time
-last_config_reload_time = time.time() # Was 0, BUT it should be the current time, since we've loaded the configuration on program load
+last_config_reload_time = 0 # Was 0, BUT it should be the current time, since we've loaded the configuration on program load
 CONFIG_RELOAD_INTERVAL = getattr(cdconfig, 'CONFIG_RELOAD_INTERVAL', 300)  # Reload config every 5 minutes (adjust as needed in cdconfig.py)
 
 ## Class definitions
