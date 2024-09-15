@@ -321,7 +321,7 @@ async def process_channel(guild, channel, delete_after):
     while True:
         try:
             message_batch = []
-            async for message in handle_rate_limits(channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None)):
+            async for message in handle_rate_limits(channel.history(limit=1000, before=discord.Object(id=last_message_id) if last_message_id else None)):
                 message_batch.append(message)
                 messages_checked += 1
 
