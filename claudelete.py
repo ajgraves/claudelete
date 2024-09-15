@@ -321,7 +321,7 @@ async def process_channel(guild, channel, delete_after):
     while True:
         try:
             message_batch = []
-            async for message in handle_rate_limits(channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None)):
+            async for message in handle_rate_limits(channel.history(limit=1000, before=discord.Object(id=last_message_id) if last_message_id else None)):
                 message_batch.append(message)
                 messages_checked += 1
 
@@ -364,8 +364,8 @@ async def process_channel(guild, channel, delete_after):
                 except UnicodeEncodeError:
                     print(f"Progress update - Channel ID: {channel.id}, Guild ID: {guild.id}, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
 
-            # Add a longer delay between batches
-            await asyncio.sleep(2)
+            # Add a delay between batches
+            await asyncio.sleep(random.uniform(0.5, 1))
 
         except Forbidden:
             print(f"No permission to access channel {channel.id} in guild {guild.id}")
