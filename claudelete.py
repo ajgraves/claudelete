@@ -321,7 +321,7 @@ async def process_channel(guild, channel, delete_after):
     while True:
         try:
             message_batch = []
-            async for message in handle_rate_limits(channel.history(limit=1000, before=discord.Object(id=last_message_id) if last_message_id else None)):
+            async for message in handle_rate_limits(channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None)):
                 message_batch.append(message)
                 messages_checked += 1
 
@@ -358,11 +358,12 @@ async def process_channel(guild, channel, delete_after):
                         print(f"Error deleting message in channel {channel.id}, guild {guild.id}: {e}")
                         await asyncio.sleep(5)
                 
-            if delete_count % 10 == 0 and delete_count > 0:
-                try:
-                    print(f"Progress update - Channel: {channel.name}, Guild: {guild.name}, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
-                except UnicodeEncodeError:
-                    print(f"Progress update - Channel ID: {channel.id}, Guild ID: {guild.id}, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+                # Move progress update inside the loop and check after each message
+                if delete_count % 10 == 0 and delete_count > 0:
+                    try:
+                        print(f"Progress update - Channel: {channel.name}, Guild: {guild.name}, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+                    except UnicodeEncodeError:
+                        print(f"Progress update - Channel ID: {channel.id}, Guild ID: {guild.id}, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
 
             # Add a delay between batches
             await asyncio.sleep(random.uniform(0.5, 1))
