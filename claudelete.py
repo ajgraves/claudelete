@@ -437,6 +437,9 @@ async def delete_old_messages_task():
 
             # Wait for new tasks to complete or for TASK_INTERVAL_SECONDS seconds, whichever comes first
             if new_tasks:
+                total_deleted = 0
+                total_checked = 0
+                completed_tasks = 0
                 try:
                     done, pending = await asyncio.wait(new_tasks, timeout=TASK_INTERVAL_SECONDS, return_when=asyncio.ALL_COMPLETED)
                     for task in done:
@@ -444,12 +447,19 @@ async def delete_old_messages_task():
                             result = task.result()
                             if isinstance(result, tuple):
                                 deleted, checked = result
-                                print(f"Task completed. Messages deleted: {deleted}, Messages checked: {checked}")
+                                total_deleted += deleted
+                                total_checked += checked
+                                completed_tasks += 1
                         except Exception as e:
                             print(f"Task error: {e}")
                             print(f"Traceback: {traceback.format_exc()}")
+                    
+                    print(f"{completed_tasks} task(s) completed. Total messages deleted: {total_deleted}, Total messages checked: {total_checked}")
+                    
+                    if pending:
+                        print(f"{len(pending)} tasks are still running and will continue in the background.")
                 except asyncio.TimeoutError:
-                    print(f"Some tasks are still running after {TASK_INTERVAL_SECONDS} seconds. They will continue in the background.")
+                    print(f"Timeout reached after {TASK_INTERVAL_SECONDS} seconds. {completed_tasks} tasks completed, {len(new_tasks) - completed_tasks} tasks are still running and will continue in the background.")
 
             print(f"Delete old messages task iteration complete. Channels still being processed: {len(channels_in_progress)}")
 
@@ -476,7 +486,7 @@ async def continuous_delete_old_messages():
             # If the task completed in less than the interval, wait for the remaining time
             if elapsed_time < TASK_INTERVAL_SECONDS:
                 wait_time = TASK_INTERVAL_SECONDS - elapsed_time
-                print(f"Waiting for {wait_time:.2f} seconds before next iteration")
+                print(f"Ran for {elapsed_time:.2f} seconds, waiting for {wait_time:.2f} seconds before next iteration")
                 await asyncio.sleep(wait_time)
 
             print("delete_old_messages task iteration completed.")
