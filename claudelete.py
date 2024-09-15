@@ -273,6 +273,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     init_database()
+    reload_config()
     bot.loop.create_task(continuous_delete_old_messages())
 
 async def process_channel(guild, channel, delete_after):
