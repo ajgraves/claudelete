@@ -100,7 +100,7 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 
 # Function to reload the configuration
 def reload_config():
-    global last_config_reload_time, TASK_INTERVAL_SECONDS
+    global last_config_reload_time, TASK_INTERVAL_SECONDS, CONFIG_RELOAD_INTERVAL
     current_time = time.time()
     if current_time - last_config_reload_time > CONFIG_RELOAD_INTERVAL:
         importlib.reload(cdconfig)
