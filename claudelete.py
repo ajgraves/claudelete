@@ -317,28 +317,38 @@ async def process_channel(guild, channel, delete_after):
     messages_checked = 0
     utc_now = datetime.now(pytz.utc)
     last_message_id = None
+    last_progress_time = time.time()
 
     while True:
         try:
+            print(f"Fetching batch for channel {channel.id}, guild {guild.id}")
+            fetch_start_time = time.time()
             message_batch = []
             async for message in handle_rate_limits(channel.history(limit=1000, before=discord.Object(id=last_message_id) if last_message_id else None)):
                 message_batch.append(message)
                 messages_checked += 1
+            fetch_end_time = time.time()
+            print(f"Fetched {len(message_batch)} messages in {fetch_end_time - fetch_start_time:.2f} seconds")
 
             if not message_batch:
-                break  # No more messages to process
+                print(f"No more messages to process in channel {channel.id}, guild {guild.id}")
+                break
 
             last_message_id = message_batch[-1].id
 
             for message in message_batch:
                 message_time = message.created_at.replace(tzinfo=pytz.utc)
                 if utc_now - message_time > delete_after:
+                    delete_start_time = time.time()
                     try:
                         await message.delete()
                         delete_count += 1
                         await progress_queue.put(1)
                         
-                        # Add a random delay between 0. and 1 seconds
+                        delete_end_time = time.time()
+                        print(f"Deleted message in {delete_end_time - delete_start_time:.2f} seconds")
+                        
+                        # Add a random delay between 0.5 and 1 seconds                        
                         await asyncio.sleep(random.uniform(0.5, 1))
                         
                     except NotFound:
@@ -358,12 +368,13 @@ async def process_channel(guild, channel, delete_after):
                         print(f"Error deleting message in channel {channel.id}, guild {guild.id}: {e}")
                         await asyncio.sleep(5)
                 
-                # Move progress update inside the loop and check after each message
-                if delete_count % 10 == 0 and delete_count > 0:
+                current_time = time.time()
+                if delete_count % 10 == 0 and delete_count > 0 or current_time - last_progress_time > 60:
                     try:
                         print(f"Progress update - Channel: {channel.name}, Guild: {guild.name}, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
                     except UnicodeEncodeError:
                         print(f"Progress update - Channel ID: {channel.id}, Guild ID: {guild.id}, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+                    last_progress_time = current_time
 
             # Add a delay between batches
             await asyncio.sleep(random.uniform(0.5, 1))
@@ -375,6 +386,7 @@ async def process_channel(guild, channel, delete_after):
             print(f"Error processing channel {channel.id} in guild {guild.id}: {e}")
             break
 
+    print(f"Finished processing channel {channel.id}, guild {guild.id}. Total messages checked: {messages_checked}, Total messages deleted: {delete_count}")
     channels_in_progress.remove(channel.id)
     del channel_tasks[channel.id]
     return delete_count, messages_checked
