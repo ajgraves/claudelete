@@ -53,6 +53,13 @@ class ResizableSemaphore:
     def release(self):
         return self._semaphore.release()
 
+    async def __aenter__(self):
+        await self.acquire()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self.release()
+
     def resize(self, new_value):
         if new_value > self._value:
             # If increasing, release additional permits
