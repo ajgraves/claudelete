@@ -14,3 +14,6 @@ TASK_INTERVAL_SECONDS = 60
 
 # CONFIG_RELOAD_INTERVAL tells Claudelete how often it should check cdconfig.py for updates
 CONFIG_RELOAD_INTERVAL = 300
+
+# MAX_CONCURRENT_TASKS tells Claudelete how many tasks to kick off at a time when checking channels for old messages that need to be deleted.
+MAX_CONCURRENT_TASKS = 25

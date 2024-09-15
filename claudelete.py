@@ -29,7 +29,7 @@ channels_in_progress = set()
 channel_tasks = {}
 
 # Configurable maximum number of concurrent tasks
-MAX_CONCURRENT_TASKS = 25
+MAX_CONCURRENT_TASKS = getattr(cdconfig, 'MAX_CONCURRENT_TASKS', 25)
 
 # Semaphore to limit concurrent tasks
 task_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
@@ -100,14 +100,15 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 
 # Function to reload the configuration
 def reload_config():
-    global last_config_reload_time, TASK_INTERVAL_SECONDS, CONFIG_RELOAD_INTERVAL
+    global last_config_reload_time, TASK_INTERVAL_SECONDS, CONFIG_RELOAD_INTERVAL, MAX_CONCURRENT_TASKS
     current_time = time.time()
     if current_time - last_config_reload_time > CONFIG_RELOAD_INTERVAL:
         importlib.reload(cdconfig)
         TASK_INTERVAL_SECONDS = getattr(cdconfig, 'TASK_INTERVAL_SECONDS', 60)
         CONFIG_RELOAD_INTERVAL = getattr(cdconfig, 'CONFIG_RELOAD_INTERVAL', 300)
+        MAX_CONCURRENT_TASKS = getattr(cdconfig, 'MAX_CONCURRENT_TASKS', 25)
         last_config_reload_time = current_time
-        print(f"Configuration reloaded. TASK_INTERVAL_SECONDS is now {TASK_INTERVAL_SECONDS}, CONFIG_RELOAD_INTERVAL is now {CONFIG_RELOAD_INTERVAL}")
+        print(f"Configuration reloaded. TASK_INTERVAL_SECONDS is now {TASK_INTERVAL_SECONDS}, CONFIG_RELOAD_INTERVAL is now {CONFIG_RELOAD_INTERVAL}, MAX_CONCURRENT_TASKS is now {MAX_CONCURRENT_TASKS}")
 
 def create_connection():
     try:
