@@ -333,8 +333,8 @@ async def process_channel(guild, channel, delete_after):
         return 0, 0
     
     deletion_cutoff = utc_now - delete_after
-    last_message_id = None
     last_progress_time = time.time()
+    cutoff_snowflake = discord.utils.time_snowflake(deletion_cutoff)
 
     #print(f"Deletion cutoff time: {deletion_cutoff.isoformat()}")
 
@@ -377,15 +377,9 @@ async def process_channel(guild, channel, delete_after):
             # Use the deletion_cutoff as the initial 'before' parameter
             history_params = {
                 'limit': PROCESS_CHANNEL_BATCH_SIZE,
+                'before': discord.Object(id=cutoff_snowflake),
                 'oldest_first': False
             }
-
-            if last_message_id:
-                history_params['before'] = discord.Object(id=last_message_id)
-            else:
-                # Convert deletion_cutoff to a Discord snowflake
-                cutoff_snowflake = discord.utils.time_snowflake(deletion_cutoff)
-                history_params['before'] = discord.Object(id=cutoff_snowflake)
 
             # Log message to show it's working correctly
             #print(f"Asking for messages from channel {channel.id} older than {deletion_cutoff.isoformat()}")
@@ -403,8 +397,6 @@ async def process_channel(guild, channel, delete_after):
             if not message_batch:
                 #print(f"No more messages to process in channel {channel.id}, guild {guild.id}")
                 break
-
-            last_message_id = message_batch[-1].id
 
             for message in message_batch:
                 delete_start_time = time.time()
@@ -469,6 +461,9 @@ async def handle_rate_limits(history_iterator):
                 retry_after = e.retry_after
                 print(f"Rate limited when fetching message history. Waiting for {retry_after} seconds.")
                 await asyncio.sleep(retry_after)
+            elif e.status == 503:  # Service unavailable, shouldn't need this but here we are
+                print(f"Service unavailable error when fetching message history. Waiting for 4 seconds.")
+                await asyncio.sleep(5)
             else:
                 print(f"HTTP error when fetching message history: {e}")
                 await asyncio.sleep(5)
