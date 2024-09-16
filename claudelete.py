@@ -336,7 +336,7 @@ async def process_channel(guild, channel, delete_after):
     last_message_id = None
     last_progress_time = time.time()
 
-    print(f"Deletion cutoff time: {deletion_cutoff.isoformat()}")
+    #print(f"Deletion cutoff time: {deletion_cutoff.isoformat()}")
 
     async def delete_with_timeout(message, channel, guild):
         async def delete_attempt():
@@ -389,17 +389,16 @@ async def process_channel(guild, channel, delete_after):
 
             # Log message to show it's working correctly
             #print(f"Asking for messages from channel {channel.id} older than {deletion_cutoff.isoformat()}")
-            
-            print(f"Asking for messages from channel {channel.id} older than {deletion_cutoff.isoformat()}")
-            print(f"History params: {history_params}")
+            #print(f"Asking for messages from channel {channel.id} older than {deletion_cutoff.isoformat()}")
+            #print(f"History params: {history_params}")
 
             async for message in handle_rate_limits(channel.history(**history_params)):
-                print(f"Retrieved message with ID {message.id}, created at {message.created_at.isoformat()}")
+                #print(f"Retrieved message with ID {message.id}, created at {message.created_at.isoformat()}")
                 message_batch.append(message)
                 messages_checked += 1
             fetch_end_time = time.time()
             #print(f"Fetched {len(message_batch)} messages in {fetch_end_time - fetch_start_time:.2f} seconds")
-            print(f"Retrieved {len(message_batch)} messages. Oldest message (if any) is from {message_batch[-1].created_at.isoformat() if message_batch else 'N/A'}")
+            #print(f"Retrieved {len(message_batch)} messages. Oldest message (if any) is from {message_batch[-1].created_at.isoformat() if message_batch else 'N/A'}")
 
             if not message_batch:
                 #print(f"No more messages to process in channel {channel.id}, guild {guild.id}")
