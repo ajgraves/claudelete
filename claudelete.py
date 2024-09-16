@@ -319,6 +319,17 @@ async def process_channel(guild, channel, delete_after):
     last_message_id = None
     last_progress_time = time.time()
 
+    async def delete_with_timeout(message):
+        try:
+            await asyncio.wait_for(message.delete(), timeout=7.0)
+            return True
+        except TimeoutError:
+            print(f"Delete operation timed out for message {message.id} in channel {channel.id}, guild {guild.id}")
+            return False
+        except Exception as e:
+            print(f"Error deleting message {message.id} in channel {channel.id}, guild {guild.id}: {e}")
+            return False
+
     while True:
         try:
             #print(f"Fetching batch for channel {channel.id}, guild {guild.id}")
@@ -341,14 +352,14 @@ async def process_channel(guild, channel, delete_after):
                 if utc_now - message_time > delete_after:
                     delete_start_time = time.time()
                     try:
-                        await message.delete()
-                        delete_count += 1
-                        await progress_queue.put(1)
+                        delete_success = await delete_with_timeout(message)
+                        if delete_success:
+                            delete_count += 1
+                            await progress_queue.put(1)
                         
                         delete_end_time = time.time()
-                        print(f"Deleted message in {delete_end_time - delete_start_time:.2f} seconds")
+                        print(f"Delete operation took {delete_end_time - delete_start_time:.2f} seconds")
                         
-                        # Add a random delay between 0.5 and 1 seconds                        
                         await asyncio.sleep(random.uniform(0.5, 1))
                         
                     except NotFound:
