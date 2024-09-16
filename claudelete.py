@@ -495,7 +495,7 @@ async def update_progress():
         print("Progress update task cancelled")
 
 async def delete_old_messages_task():
-    print("Starting delete_old_messages_task")
+    #print("Starting delete_old_messages_task")
     connection = create_connection()
     if connection:
         try:
@@ -574,14 +574,16 @@ async def delete_old_messages_task():
                 except asyncio.TimeoutError:
                     print(f"Timeout reached after {TASK_INTERVAL_SECONDS} seconds. {completed_tasks} tasks completed, {len(new_tasks) - completed_tasks} tasks are still running and will continue in the background.")
 
-            print(f"Delete old messages task iteration complete. Channels still being processed: {len(channels_in_progress)}")
+            #print(f"Delete old messages task iteration complete. Channels still being processed: {len(channels_in_progress)}")
+            if len(channels_in_progress) > 0:
+                print(f"Delete old messages task iteration complete, however there are {len(channels_in_progress)} Channel(s) still being processed")
 
         except Error as e:
             print(f"Error reading from database: {e}")
         finally:
             cursor.close()
             connection.close()
-    print("Finished delete_old_messages_task iteration")
+    #print("Finished delete_old_messages_task iteration")
 
 async def continuous_delete_old_messages():
     progress_task = asyncio.create_task(update_progress())
@@ -589,7 +591,7 @@ async def continuous_delete_old_messages():
         while True:
             reload_config()  # This will check and reload the config if necessary
             start_time = asyncio.get_event_loop().time()
-            print(f"Starting delete_old_messages task...")
+            #print(f"Starting delete_old_messages task...")
             
             await delete_old_messages_task()
             
@@ -602,7 +604,7 @@ async def continuous_delete_old_messages():
                 print(f"Ran for {elapsed_time:.2f} seconds, waiting for {wait_time:.2f} seconds before next iteration")
                 await asyncio.sleep(wait_time)
 
-            print("delete_old_messages task iteration completed.")
+            #print("delete_old_messages task iteration completed.")
     finally:
         progress_task.cancel()
         await progress_task
