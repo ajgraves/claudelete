@@ -767,7 +767,7 @@ async def purge_user(interaction: discord.Interaction, username: str):
     progress_task = asyncio.create_task(update_progress())
 
     tasks = []
-    for channel in interaction.guild.text_channels:
+    for channel in interaction.guild.channels:  #interaction.guild.text_channels:
         if channel.permissions_for(interaction.guild.me).manage_messages:
             task = asyncio.create_task(delete_user_messages(channel, username, progress_queue))
             tasks.append(task)
