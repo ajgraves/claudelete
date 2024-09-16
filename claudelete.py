@@ -1,5 +1,5 @@
 import discord
-from discord import app_commands, HTTPException, NotFound, Forbidden
+from discord import app_commands, HTTPException, NotFound, Forbidden, CategoryChannel
 from discord.app_commands import MissingPermissions
 from discord.errors import RateLimited, HTTPException, Forbidden, NotFound
 from discord.ext import commands, tasks
@@ -768,6 +768,8 @@ async def purge_user(interaction: discord.Interaction, username: str):
 
     tasks = []
     for channel in interaction.guild.channels:  #interaction.guild.text_channels:
+        if not hasattr(channel, 'history'):
+            continue  # Skip channels without history attribute
         if channel.permissions_for(interaction.guild.me).manage_messages:
             task = asyncio.create_task(delete_user_messages(channel, username, progress_queue))
             tasks.append(task)
