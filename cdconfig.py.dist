@@ -17,3 +17,8 @@ CONFIG_RELOAD_INTERVAL = 300
 
 # MAX_CONCURRENT_TASKS tells Claudelete how many tasks to kick off at a time when checking channels for old messages that need to be deleted.
 MAX_CONCURRENT_TASKS = 25
+
+# Various configurable batch sizes, that will be read from the configuration file and periodically reloaded
+PROCESS_CHANNEL_BATCH_SIZE = 250        # Batch size for process_channel()
+DELETE_USER_MESSAGES_BATCH_SIZE = 100   # Batch size for delete_user_messages()
+PURGE_CHANNEL_BATCH_SIZE = 100          # Batch size for purge_channel()

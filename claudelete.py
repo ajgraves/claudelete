@@ -42,6 +42,12 @@ TASK_INTERVAL_SECONDS = getattr(cdconfig, 'TASK_INTERVAL_SECONDS', 60)  # Defaul
 last_config_reload_time = 0 # Was 0, BUT it should be the current time, since we've loaded the configuration on program load
 CONFIG_RELOAD_INTERVAL = getattr(cdconfig, 'CONFIG_RELOAD_INTERVAL', 300)  # Reload config every 5 minutes (adjust as needed in cdconfig.py)
 
+# Various configurable batch sizes, that will be read from the configuration file and periodically reloaded
+PROCESS_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PROCESS_CHANNEL_BATCH_SIZE', 250)  # Batch size for process_channel()
+DELETE_USER_MESSAGES_BATCH_SIZE = getattr(cdconfig, 'DELETE_USER_MESSAGES_BATCH_SIZE', 100)  # Batch size for delete_user_messages()
+PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100)  # Batch size for purge_channel()
+
+
 ## Class definitions
 class ResizableSemaphore:
     def __init__(self, value):
@@ -133,7 +139,7 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 
 # Function to reload the configuration
 def reload_config():
-    global last_config_reload_time, TASK_INTERVAL_SECONDS, CONFIG_RELOAD_INTERVAL, MAX_CONCURRENT_TASKS, task_semaphore
+    global last_config_reload_time, TASK_INTERVAL_SECONDS, CONFIG_RELOAD_INTERVAL, MAX_CONCURRENT_TASKS, task_semaphore, PROCESS_CHANNEL_BATCH_SIZE, DELETE_USER_MESSAGES_BATCH_SIZE, PURGE_CHANNEL_BATCH_SIZE
     current_time = time.time()
     if current_time - last_config_reload_time > CONFIG_RELOAD_INTERVAL:
         importlib.reload(cdconfig)
@@ -143,8 +149,11 @@ def reload_config():
         if new_max_tasks != MAX_CONCURRENT_TASKS:
             task_semaphore.resize(new_max_tasks)
             MAX_CONCURRENT_TASKS = new_max_tasks
+        PROCESS_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PROCESS_CHANNEL_BATCH_SIZE', 250)  # Batch size for process_channel()
+        DELETE_USER_MESSAGES_BATCH_SIZE = getattr(cdconfig, 'DELETE_USER_MESSAGES_BATCH_SIZE', 100)  # Batch size for delete_user_messages()
+        PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100)  # Batch size for purge_channel()
         last_config_reload_time = current_time
-        print(f"Configuration reloaded. TASK_INTERVAL_SECONDS is now {TASK_INTERVAL_SECONDS}, CONFIG_RELOAD_INTERVAL is now {CONFIG_RELOAD_INTERVAL}, MAX_CONCURRENT_TASKS is now {MAX_CONCURRENT_TASKS}")
+        print(f"Configuration reloaded, new values:\nTASK_INTERVAL_SECONDS={TASK_INTERVAL_SECONDS}\nCONFIG_RELOAD_INTERVAL={CONFIG_RELOAD_INTERVAL}\nMAX_CONCURRENT_TASKS={MAX_CONCURRENT_TASKS}\nPROCESS_CHANNEL_BATCH_SIZE={PROCESS_CHANNEL_BATCH_SIZE}\nDELETE_USER_MESSAGES_BATCH_SIZE={DELETE_USER_MESSAGES_BATCH_SIZE}\nPURGE_CHANNEL_BATCH_SIZE={PURGE_CHANNEL_BATCH_SIZE}")
 
 def create_connection():
     try:
@@ -227,7 +236,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
     while True:
         try:
             message_count = 0
-            async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
+            async for message in channel.history(limit=DELETE_USER_MESSAGES_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None):
                 message_count += 1
                 total_messages_checked += 1
                 last_message_id = message.id
@@ -355,7 +364,7 @@ async def process_channel(guild, channel, delete_after):
             #print(f"Fetching batch for channel {channel.id}, guild {guild.id}")
             fetch_start_time = time.time()
             message_batch = []
-            async for message in handle_rate_limits(channel.history(limit=500, before=discord.Object(id=last_message_id) if last_message_id else None)):
+            async for message in handle_rate_limits(channel.history(limit=PROCESS_CHANNEL_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None)):
                 message_batch.append(message)
                 messages_checked += 1
             fetch_end_time = time.time()
@@ -866,7 +875,7 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
                     await asyncio.sleep(wait_time)
             
             try:
-                async for message in channel.history(limit=100, before=discord.Object(id=last_message_id) if last_message_id else None):
+                async for message in channel.history(limit=PURGE_CHANNEL_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None):
                     messages.append(message)
                     history_rate_limit["remaining"] -= 1
                     if history_rate_limit["remaining"] <= 0:
