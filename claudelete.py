@@ -326,6 +326,7 @@ async def process_channel(guild, channel, delete_after):
     delete_count = 0
     messages_checked = 0
     utc_now = datetime.now(pytz.utc)
+    deletion_cutoff = utc_now - delete_after
     last_message_id = None
     last_progress_time = time.time()
 
@@ -364,7 +365,15 @@ async def process_channel(guild, channel, delete_after):
             #print(f"Fetching batch for channel {channel.id}, guild {guild.id}")
             fetch_start_time = time.time()
             message_batch = []
-            async for message in handle_rate_limits(channel.history(limit=PROCESS_CHANNEL_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None)):
+
+            # Use the deletion_cutoff as the initial 'before' parameter
+            history_params = {
+                'limit': PROCESS_CHANNEL_BATCH_SIZE,
+                'before': discord.Object(id=last_message_id) if last_message_id else discord.Object(id=int(deletion_cutoff.timestamp() * 1000)),
+                'oldest_first': False  # Ensure we're getting the newest messages first
+            }
+
+            async for message in handle_rate_limits(channel.history(**history_params)):
                 message_batch.append(message)
                 messages_checked += 1
             fetch_end_time = time.time()
@@ -377,37 +386,35 @@ async def process_channel(guild, channel, delete_after):
             last_message_id = message_batch[-1].id
 
             for message in message_batch:
-                message_time = message.created_at.replace(tzinfo=pytz.utc)
-                if utc_now - message_time > delete_after:
-                    delete_start_time = time.time()
-                    try:
-                        delete_success = await delete_with_timeout(message, channel, guild)
-                        if delete_success:
-                            delete_count += 1
-                            await progress_queue.put(1)
-                        
-                        delete_end_time = time.time()
-                        print(f"Delete operation took {delete_end_time - delete_start_time:.2f} seconds")
-                        
-                        await asyncio.sleep(random.uniform(0.5, 1))
-                        
-                    except NotFound:
-                        print(f"Message not found in channel {channel.id}, guild {guild.id}")
-                    except Forbidden:
-                        print(f"Forbidden to delete message in channel {channel.id}, guild {guild.id}")
-                        return delete_count, messages_checked
-                    except HTTPException as e:
-                        if e.status == 429:  # Rate limit error
-                            retry_after = e.retry_after
-                            print(f"Rate limited when deleting message in channel {channel.id}, guild {guild.id}. Waiting for {retry_after} seconds.")
-                            await asyncio.sleep(retry_after)
-                        else:
-                            print(f"HTTP error when deleting message in channel {channel.id}, guild {guild.id}: {e}")
-                            await asyncio.sleep(5)
-                    except Exception as e:
-                        print(f"Error deleting message in channel {channel.id}, guild {guild.id}: {e}")
+                delete_start_time = time.time()
+                try:
+                    delete_success = await delete_with_timeout(message, channel, guild)
+                    if delete_success:
+                        delete_count += 1
+                        await progress_queue.put(1)
+                    
+                    delete_end_time = time.time()
+                    print(f"Delete operation took {delete_end_time - delete_start_time:.2f} seconds")
+                    
+                    await asyncio.sleep(random.uniform(0.5, 1))
+                    
+                except NotFound:
+                    print(f"Message not found in channel {channel.id}, guild {guild.id}")
+                except Forbidden:
+                    print(f"Forbidden to delete message in channel {channel.id}, guild {guild.id}")
+                    return delete_count, messages_checked
+                except HTTPException as e:
+                    if e.status == 429:  # Rate limit error
+                        retry_after = e.retry_after
+                        print(f"Rate limited when deleting message in channel {channel.id}, guild {guild.id}. Waiting for {retry_after} seconds.")
+                        await asyncio.sleep(retry_after)
+                    else:
+                        print(f"HTTP error when deleting message in channel {channel.id}, guild {guild.id}: {e}")
                         await asyncio.sleep(5)
-                
+                except Exception as e:
+                    print(f"Error deleting message in channel {channel.id}, guild {guild.id}: {e}")
+                    await asyncio.sleep(5)
+            
                 current_time = time.time()
                 if delete_count % 10 == 0 and delete_count > 0 or current_time - last_progress_time > 60:
                     try:
@@ -426,7 +433,6 @@ async def process_channel(guild, channel, delete_after):
             print(f"Error processing channel {channel.id} in guild {guild.id}: {e}")
             break
 
-    #print(f"Finished processing channel {channel.id}, guild {guild.id}. Total messages checked: {messages_checked}, Total messages deleted: {delete_count}")
     channels_in_progress.remove(channel.id)
     del channel_tasks[channel.id]
     return delete_count, messages_checked
