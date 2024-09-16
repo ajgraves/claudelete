@@ -3,6 +3,7 @@ from discord import app_commands, HTTPException, NotFound, Forbidden
 from discord.app_commands import MissingPermissions
 from discord.errors import RateLimited, HTTPException, Forbidden, NotFound
 from discord.ext import commands, tasks
+from discord.utils import snowflake_time
 from datetime import datetime, timedelta
 import pytz
 import asyncio
@@ -376,9 +377,15 @@ async def process_channel(guild, channel, delete_after):
             # Use the deletion_cutoff as the initial 'before' parameter
             history_params = {
                 'limit': PROCESS_CHANNEL_BATCH_SIZE,
-                'before': discord.Object(id=last_message_id) if last_message_id else discord.utils.snowflake_time(int(deletion_cutoff.timestamp() * 1000)),
-                'oldest_first': False  # Ensure we're getting the newest messages first
+                'oldest_first': False
             }
+
+            if last_message_id:
+                history_params['before'] = discord.Object(id=last_message_id)
+            else:
+                # Convert deletion_cutoff to a Discord snowflake
+                cutoff_snowflake = discord.utils.time_snowflake(deletion_cutoff)
+                history_params['before'] = discord.Object(id=cutoff_snowflake)
 
             # Log message to show it's working correctly
             #print(f"Asking for messages from channel {channel.id} older than {deletion_cutoff.isoformat()}")
@@ -392,7 +399,7 @@ async def process_channel(guild, channel, delete_after):
                 messages_checked += 1
             fetch_end_time = time.time()
             #print(f"Fetched {len(message_batch)} messages in {fetch_end_time - fetch_start_time:.2f} seconds")
-            print(f"Retrieved {len(message_batch)} messages")
+            print(f"Retrieved {len(message_batch)} messages. Oldest message (if any) is from {message_batch[-1].created_at.isoformat() if message_batch else 'N/A'}")
 
             if not message_batch:
                 #print(f"No more messages to process in channel {channel.id}, guild {guild.id}")
