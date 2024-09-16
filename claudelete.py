@@ -374,7 +374,7 @@ async def process_channel(guild, channel, delete_after):
             }
 
             # Log message to show it's working correctly
-            print(f"Asking for messages from channel {channel.id} older than {deletion_cutoff.isoformat()}")
+            #print(f"Asking for messages from channel {channel.id} older than {deletion_cutoff.isoformat()}")
 
             async for message in handle_rate_limits(channel.history(**history_params)):
                 message_batch.append(message)
