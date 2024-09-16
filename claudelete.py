@@ -6,6 +6,7 @@ from discord.ext import commands, tasks
 from datetime import datetime, timedelta
 import pytz
 import asyncio
+from asyncio import TimeoutError
 import MySQLdb
 from MySQLdb import Error
 import time
@@ -319,15 +320,34 @@ async def process_channel(guild, channel, delete_after):
     last_message_id = None
     last_progress_time = time.time()
 
-    async def delete_with_timeout(message):
+    async def delete_with_timeout(message, channel, guild):
+        async def delete_attempt():
+            while True:
+                try:
+                    await message.delete()
+                    return True
+                except HTTPException as e:
+                    if e.status == 429:  # Rate limit error
+                        retry_after = e.retry_after
+                        print(f"Rate limited when deleting message {message.id} in channel {channel.id}, guild {guild.id}. Waiting for {retry_after} seconds.")
+                        await asyncio.sleep(retry_after)
+                    else:
+                        print(f"HTTP error when deleting message {message.id} in channel {channel.id}, guild {guild.id}: {e}")
+                        return False
+                except NotFound:
+                    print(f"Message {message.id} not found in channel {channel.id}, guild {guild.id}")
+                    return False
+                except Forbidden:
+                    print(f"Forbidden to delete message {message.id} in channel {channel.id}, guild {guild.id}")
+                    return False
+                except Exception as e:
+                    print(f"Error deleting message {message.id} in channel {channel.id}, guild {guild.id}: {e}")
+                    return False
+
         try:
-            await asyncio.wait_for(message.delete(), timeout=7.0)
-            return True
+            return await asyncio.wait_for(delete_attempt(), timeout=15.0)
         except TimeoutError:
             print(f"Delete operation timed out for message {message.id} in channel {channel.id}, guild {guild.id}")
-            return False
-        except Exception as e:
-            print(f"Error deleting message {message.id} in channel {channel.id}, guild {guild.id}: {e}")
             return False
 
     while True:
@@ -352,7 +372,7 @@ async def process_channel(guild, channel, delete_after):
                 if utc_now - message_time > delete_after:
                     delete_start_time = time.time()
                     try:
-                        delete_success = await delete_with_timeout(message)
+                        delete_success = await delete_with_timeout(message, channel, guild)
                         if delete_success:
                             delete_count += 1
                             await progress_queue.put(1)
