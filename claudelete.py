@@ -720,7 +720,7 @@ async def list_channels(interaction: discord.Interaction):
 async def purge_user(interaction: discord.Interaction, username: str):
     await interaction.response.defer(ephemeral=True)
 
-    await interaction.followup.send(f"Starting purge operation for user: {username}. **NOTE:** Due to Discord limitations, you may stop getting progress updates about this process. Rest assured, the process will continue running until it successfully completes.", ephemeral=True)
+    await interaction.followup.send(f"Starting purge operation for user: '{username}'. **NOTE:** Due to Discord limitations, you may stop getting progress updates about this process. Rest assured, the process will continue running until it successfully completes.", ephemeral=True)
     
     progress_queue = asyncio.Queue()
     total_purged = 0
