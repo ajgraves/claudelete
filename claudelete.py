@@ -1027,6 +1027,40 @@ async def lookup_guild_error(interaction: discord.Interaction, error: app_comman
     else:
         await interaction.response.send_message(f"An error occurred: {str(error)}", ephemeral=True)
 
+@bot.tree.command(name="lookup_channel", description="Look up a channel by its ID")
+@app_commands.describe(channel_id="The ID of the channel to look up")
+@app_commands.checks.has_permissions(moderate_members=True)
+async def lookup_channel(interaction: discord.Interaction, channel_id: str):
+    try:
+        # Convert the input to an integer
+        channel_id = int(channel_id)
+        
+        # Attempt to fetch the channel
+        channel = bot.get_channel(channel_id)
+        
+        if channel:
+            # Channel found, send the name and type
+            channel_type = str(channel.type).split('.')[-1]  # Get the channel type as a string
+            await interaction.response.send_message(f"The channel with ID {channel_id} is named: {channel.name}\nType: {channel_type}\nGuild: {channel.guild.name}", ephemeral=True)
+        else:
+            # Channel not found
+            await interaction.response.send_message(f"No channel found with ID {channel_id}. The bot might not have access to this channel.", ephemeral=True)
+    
+    except ValueError:
+        # Invalid input (not a number)
+        await interaction.response.send_message("Invalid input. Please provide a valid numeric channel ID.", ephemeral=True)
+    except Exception as e:
+        # Handle any other unexpected errors
+        print(f"Error in lookup_channel command: {str(e)}")
+        await interaction.response.send_message("An error occurred while processing your request.", ephemeral=True)
+
+@lookup_channel.error
+async def lookup_channel_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    if isinstance(error, app_commands.errors.MissingPermissions):
+        await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"An error occurred: {str(error)}", ephemeral=True)
+
 # Check if the bot is alive
 @bot.tree.command(name="ping", description="Check if the bot is responsive")
 async def ping(interaction: discord.Interaction):
