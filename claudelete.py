@@ -732,12 +732,12 @@ async def list_channels(interaction: discord.Interaction):
                 for channel_data in channels:
                     channel = interaction.guild.get_channel(channel_data['channel_id'])
                     if channel:
-                        if channel.permissions_for(interaction.guild.me).read_messages:
+                        if channel.permissions_for(interaction.guild.me).manage_messages:
                             message += f"- {channel.name}: {format_time(channel_data['delete_after'])}\n"
                         else:
-                            message += f"- {channel.name}: {format_time(channel_data['delete_after'])} (no access)\n"
+                            message += f"- {channel.name}: {format_time(channel_data['delete_after'])} (invalid permissions or no access)\n"
                     else:
-                        message += f"- Unknown Channel (ID: {channel_data['channel_id']}): {format_time(channel_data['delete_after'])} (no access)\n"
+                        message += f"- Unknown Channel (ID: {channel_data['channel_id']}): {format_time(channel_data['delete_after'])} (invalid permissions or no access)\n"
                 await interaction.response.send_message(message)
             else:
                 await interaction.response.send_message("No channels are currently set for auto-delete in this server.")
