@@ -626,6 +626,11 @@ def get_text_channels(guild):
 ])
 @app_commands.checks.has_permissions(manage_channels=True)
 async def add_channel(interaction: discord.Interaction, channel: discord.TextChannel, time: int, unit: str):
+    # Check if the bot has permission to manage messages in the channel
+    if not channel.permissions_for(interaction.guild.me).manage_messages:
+        await interaction.response.send_message(f"Error: I don't have permission to manage messages in {channel.name}. Please grant me the 'Manage Messages' permission in this channel before adding it.", ephemeral=True)
+        return
+
     try:
         minutes = convert_to_minutes(time, unit)
     except ValueError as e:
