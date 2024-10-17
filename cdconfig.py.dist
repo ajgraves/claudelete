@@ -22,3 +22,6 @@ MAX_CONCURRENT_TASKS = 25
 PROCESS_CHANNEL_BATCH_SIZE = 250        # Batch size for process_channel()
 DELETE_USER_MESSAGES_BATCH_SIZE = 100   # Batch size for delete_user_messages()
 PURGE_CHANNEL_BATCH_SIZE = 100          # Batch size for purge_channel()
+
+# PROCESS_CHANNEL_TIMEOUT tells Claudelete how long it should wait on a delete operation before it times out in process_channel
+PROCESS_CHANNEL_TIMEOUT = 15

@@ -48,6 +48,8 @@ PROCESS_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PROCESS_CHANNEL_BATCH_SIZE', 250
 DELETE_USER_MESSAGES_BATCH_SIZE = getattr(cdconfig, 'DELETE_USER_MESSAGES_BATCH_SIZE', 100)  # Batch size for delete_user_messages()
 PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100)  # Batch size for purge_channel()
 
+# PROCESS_CHANNEL_TIMEOUT tells Claudelete how long it should wait on a delete operation before it times out in process_channel
+PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15)
 
 ## Class definitions
 class ResizableSemaphore:
@@ -153,8 +155,9 @@ def reload_config():
         PROCESS_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PROCESS_CHANNEL_BATCH_SIZE', 250)  # Batch size for process_channel()
         DELETE_USER_MESSAGES_BATCH_SIZE = getattr(cdconfig, 'DELETE_USER_MESSAGES_BATCH_SIZE', 100)  # Batch size for delete_user_messages()
         PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100)  # Batch size for purge_channel()
+        PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15) # Timeout for delete operation in process_channel()
         last_config_reload_time = current_time
-        print(f"Configuration reloaded, new values:\nTASK_INTERVAL_SECONDS={TASK_INTERVAL_SECONDS}\nCONFIG_RELOAD_INTERVAL={CONFIG_RELOAD_INTERVAL}\nMAX_CONCURRENT_TASKS={MAX_CONCURRENT_TASKS}\nPROCESS_CHANNEL_BATCH_SIZE={PROCESS_CHANNEL_BATCH_SIZE}\nDELETE_USER_MESSAGES_BATCH_SIZE={DELETE_USER_MESSAGES_BATCH_SIZE}\nPURGE_CHANNEL_BATCH_SIZE={PURGE_CHANNEL_BATCH_SIZE}")
+        print(f"Configuration reloaded, new values:\nTASK_INTERVAL_SECONDS={TASK_INTERVAL_SECONDS}\nCONFIG_RELOAD_INTERVAL={CONFIG_RELOAD_INTERVAL}\nMAX_CONCURRENT_TASKS={MAX_CONCURRENT_TASKS}\nPROCESS_CHANNEL_BATCH_SIZE={PROCESS_CHANNEL_BATCH_SIZE}\nDELETE_USER_MESSAGES_BATCH_SIZE={DELETE_USER_MESSAGES_BATCH_SIZE}\nPURGE_CHANNEL_BATCH_SIZE={PURGE_CHANNEL_BATCH_SIZE}\nPROCESS_CHANNEL_TIMEOUT={PROCESS_CHANNEL_TIMEOUT}")
 
 def create_connection():
     try:
@@ -363,7 +366,7 @@ async def process_channel(guild, channel, delete_after):
                     return False
 
         try:
-            return await asyncio.wait_for(delete_attempt(), timeout=15.0)
+            return await asyncio.wait_for(delete_attempt(), timeout=PROCESS_CHANNEL_TIMEOUT)
         except TimeoutError:
             print(f"Delete operation timed out for message {message.id} in channel {channel.id}, guild {guild.id}")
             return False
