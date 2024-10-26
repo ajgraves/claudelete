@@ -373,9 +373,9 @@ async def process_channel(guild, channel, delete_after):
         async def delete_attempt():
             while True:
                 try:
-                    # Check if this message has created a thread
+                    # Check for any threads started by this message
                     for thread in message.channel.threads:
-                        if thread.starting_message and thread.starting_message.id == message.id:
+                        if thread.parent_id == message.id:  # This is the correct way to check
                             try:
                                 await thread.delete()
                                 print(f"Deleted thread {thread.id} started by message {message.id} in channel {channel.id}")
@@ -392,6 +392,29 @@ async def process_channel(guild, channel, delete_after):
                                 else:
                                     print(f"HTTP error when deleting thread: {e}")
                                     await asyncio.sleep(1)
+
+                    # Also check archived threads
+                    try:
+                        async for thread in message.channel.archived_threads():
+                            if thread.parent_id == message.id:
+                                try:
+                                    await thread.delete()
+                                    print(f"Deleted archived thread {thread.id} started by message {message.id} in channel {channel.id}")
+                                    await asyncio.sleep(0.5)
+                                except NotFound:
+                                    print(f"Archived thread already deleted in channel {channel.id}")
+                                except Forbidden:
+                                    print(f"Forbidden to delete archived thread in channel {channel.id}")
+                                except HTTPException as e:
+                                    if e.status == 429:
+                                        retry_after = e.retry_after
+                                        print(f"Rate limited when deleting archived thread. Waiting for {retry_after} seconds.")
+                                        await asyncio.sleep(retry_after)
+                                    else:
+                                        print(f"HTTP error when deleting archived thread: {e}")
+                                        await asyncio.sleep(1)
+                    except Exception as e:
+                        print(f"Error checking archived threads: {e}")
 
                     # Original message deletion code
                     await message.delete()
