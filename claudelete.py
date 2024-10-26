@@ -1075,10 +1075,16 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
         await interaction.followup.send("I don't have permission to manage threads in this server.", ephemeral=True)
         return
 
+    try:
+        print(f"Starting orphaned thread search in guild: {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {interaction.guild.id})")
+    except UnicodeEncodeError:
+        print(f"Starting orphaned thread search in guild with ID: {interaction.guild.id}")
+    
     orphaned_threads = []
     threads_checked = 0
     threads_deleted = 0
     channel_errors = []
+    last_status_update = 0
 
     await interaction.followup.send("Searching for orphaned threads. This might take a while...", ephemeral=True)
 
@@ -1088,10 +1094,18 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
             continue
 
         if not channel.permissions_for(interaction.guild.me).view_channel:
-            channel_errors.append(f"No permission to view channel: {channel.name}")
+            try:
+                channel_errors.append(f"No permission to view channel: {channel.name}")
+            except UnicodeEncodeError:
+                channel_errors.append(f"No permission to view channel ID: {channel.id}")
             continue
 
         try:
+            try:
+                print(f"Checking channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
+            except UnicodeEncodeError:
+                print(f"Checking channel with ID: {channel.id}")
+            
             # Check active threads
             for thread in channel.threads:
                 threads_checked += 1
@@ -1103,14 +1117,26 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
                         # Parent message doesn't exist - this is an orphaned thread
                         orphaned_threads.append((channel, thread))
                         
+                        # Status update every 10 orphaned threads found
+                        if len(orphaned_threads) % 10 == 0:
+                            status_message = f"Found {len(orphaned_threads)} orphaned threads so far... (Checked {threads_checked} total threads)"
+                            print(status_message)
+                            await interaction.followup.send(status_message, ephemeral=True)
+                        
                         if delete_orphans:
                             try:
                                 await thread.delete()
                                 threads_deleted += 1
-                                print(f"Deleted orphaned thread {thread.id} in channel {channel.id}")
+                                try:
+                                    print(f"Deleted orphaned thread {thread.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {thread.id}) in channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
+                                except UnicodeEncodeError:
+                                    print(f"Deleted orphaned thread ID: {thread.id} in channel ID: {channel.id}")
                                 await asyncio.sleep(0.5)  # Rate limiting
                             except discord.Forbidden:
-                                channel_errors.append(f"No permission to delete thread in {channel.name}")
+                                try:
+                                    channel_errors.append(f"No permission to delete thread in {channel.name}")
+                                except UnicodeEncodeError:
+                                    channel_errors.append(f"No permission to delete thread in channel ID: {channel.id}")
                             except discord.HTTPException as e:
                                 if e.status == 429:
                                     retry_after = e.retry_after
@@ -1121,11 +1147,20 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
                                         await thread.delete()
                                         threads_deleted += 1
                                     except Exception as retry_e:
-                                        channel_errors.append(f"Error deleting thread in {channel.name} after rate limit: {str(retry_e)}")
+                                        try:
+                                            channel_errors.append(f"Error deleting thread in {channel.name} after rate limit: {str(retry_e)}")
+                                        except UnicodeEncodeError:
+                                            channel_errors.append(f"Error deleting thread in channel ID: {channel.id} after rate limit: {str(retry_e)}")
                                 else:
-                                    channel_errors.append(f"HTTP error deleting thread in {channel.name}: {str(e)}")
+                                    try:
+                                        channel_errors.append(f"HTTP error deleting thread in {channel.name}: {str(e)}")
+                                    except UnicodeEncodeError:
+                                        channel_errors.append(f"HTTP error deleting thread in channel ID: {channel.id}: {str(e)}")
                 except Exception as e:
-                    channel_errors.append(f"Error checking thread in {channel.name}: {str(e)}")
+                    try:
+                        channel_errors.append(f"Error checking thread in {channel.name}: {str(e)}")
+                    except UnicodeEncodeError:
+                        channel_errors.append(f"Error checking thread in channel ID: {channel.id}: {str(e)}")
 
             # Also check archived threads
             try:
@@ -1139,14 +1174,26 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
                             # Parent message doesn't exist - this is an orphaned thread
                             orphaned_threads.append((channel, thread))
                             
+                            # Status update every 10 orphaned threads found
+                            if len(orphaned_threads) % 10 == 0:
+                                status_message = f"Found {len(orphaned_threads)} orphaned threads so far... (Checked {threads_checked} total threads)"
+                                print(status_message)
+                                await interaction.followup.send(status_message, ephemeral=True)
+                            
                             if delete_orphans:
                                 try:
                                     await thread.delete()
                                     threads_deleted += 1
-                                    print(f"Deleted orphaned thread {thread.id} in channel {channel.id}")
+                                    try:
+                                        print(f"Deleted orphaned thread {thread.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {thread.id}) in channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
+                                    except UnicodeEncodeError:
+                                        print(f"Deleted orphaned thread ID: {thread.id} in channel ID: {channel.id}")
                                     await asyncio.sleep(0.5)  # Rate limiting
                                 except discord.Forbidden:
-                                    channel_errors.append(f"No permission to delete thread in {channel.name}")
+                                    try:
+                                        channel_errors.append(f"No permission to delete thread in {channel.name}")
+                                    except UnicodeEncodeError:
+                                        channel_errors.append(f"No permission to delete thread in channel ID: {channel.id}")
                                 except discord.HTTPException as e:
                                     if e.status == 429:
                                         retry_after = e.retry_after
@@ -1157,21 +1204,42 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
                                             await thread.delete()
                                             threads_deleted += 1
                                         except Exception as retry_e:
-                                            channel_errors.append(f"Error deleting thread in {channel.name} after rate limit: {str(retry_e)}")
+                                            try:
+                                                channel_errors.append(f"Error deleting thread in {channel.name} after rate limit: {str(retry_e)}")
+                                            except UnicodeEncodeError:
+                                                channel_errors.append(f"Error deleting thread in channel ID: {channel.id} after rate limit: {str(retry_e)}")
                                     else:
-                                        channel_errors.append(f"HTTP error deleting thread in {channel.name}: {str(e)}")
+                                        try:
+                                            channel_errors.append(f"HTTP error deleting thread in {channel.name}: {str(e)}")
+                                        except UnicodeEncodeError:
+                                            channel_errors.append(f"HTTP error deleting thread in channel ID: {channel.id}: {str(e)}")
                     except Exception as e:
-                        channel_errors.append(f"Error checking thread in {channel.name}: {str(e)}")
+                        try:
+                            channel_errors.append(f"Error checking thread in {channel.name}: {str(e)}")
+                        except UnicodeEncodeError:
+                            channel_errors.append(f"Error checking thread in channel ID: {channel.id}: {str(e)}")
             except discord.Forbidden:
-                channel_errors.append(f"No permission to list archived threads in {channel.name}")
+                try:
+                    channel_errors.append(f"No permission to list archived threads in {channel.name}")
+                except UnicodeEncodeError:
+                    channel_errors.append(f"No permission to list archived threads in channel ID: {channel.id}")
             except Exception as e:
-                channel_errors.append(f"Error listing archived threads in {channel.name}: {str(e)}")
+                try:
+                    channel_errors.append(f"Error listing archived threads in {channel.name}: {str(e)}")
+                except UnicodeEncodeError:
+                    channel_errors.append(f"Error listing archived threads in channel ID: {channel.id}: {str(e)}")
 
         except discord.Forbidden:
-            channel_errors.append(f"No permission to list threads in {channel.name}")
+            try:
+                channel_errors.append(f"No permission to list threads in {channel.name}")
+            except UnicodeEncodeError:
+                channel_errors.append(f"No permission to list threads in channel ID: {channel.id}")
             continue
         except Exception as e:
-            channel_errors.append(f"Error processing channel {channel.name}: {str(e)}")
+            try:
+                channel_errors.append(f"Error processing channel {channel.name}: {str(e)}")
+            except UnicodeEncodeError:
+                channel_errors.append(f"Error processing channel ID: {channel.id}: {str(e)}")
             continue
 
     # Prepare the summary message
@@ -1183,7 +1251,10 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
     if orphaned_threads:
         summary += "Orphaned threads found in:\n"
         for channel, thread in orphaned_threads:
-            summary += f"- #{channel.name}: {thread.name} (ID: {thread.id})\n"
+            try:
+                summary += f"- #{channel.name}: {thread.name} (ID: {thread.id})\n"
+            except UnicodeEncodeError:
+                summary += f"- Channel ID: {channel.id}, Thread ID: {thread.id}\n"
     
     if channel_errors:
         summary += "\nErrors encountered:\n"
@@ -1191,6 +1262,10 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
             summary += f"- {error}\n"
         if len(channel_errors) > 10:
             summary += f"... and {len(channel_errors) - 10} more errors."
+
+    # Print the final summary to console
+    print("\nFinal Summary of Orphaned Thread Search:")
+    print(summary)
 
     # Split the message if it's too long
     if len(summary) > 2000:
@@ -1202,6 +1277,11 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
                 await interaction.followup.send(chunk, ephemeral=True)
     else:
         await interaction.followup.send(summary, ephemeral=True)
+
+    try:
+        print(f"Orphaned thread search completed in guild: {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {interaction.guild.id})")
+    except UnicodeEncodeError:
+        print(f"Orphaned thread search completed in guild ID: {interaction.guild.id}")
 
 @bot.tree.command(name="show_logs", description="Show recent logs for the Claudelete bot")
 @app_commands.checks.has_permissions(moderate_members=True)
