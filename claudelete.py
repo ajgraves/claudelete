@@ -373,11 +373,11 @@ async def process_channel(guild, channel, delete_after):
         async def delete_attempt():
             while True:
                 try:
-                    # Look for a thread with the same ID as our message
-                    for thread in message.channel.threads:
-                        print(f"Comparing thread ID {thread.id} with message ID {message.id}")
-                        if thread.id == message.id:
-                            print(f"Found matching thread to delete: {thread.id}")
+                    # Try to get a thread with the same ID as our message
+                    try:
+                        thread = message.channel.get_thread(message.id)
+                        if thread:
+                            print(f"Found thread {thread.id} to delete")
                             try:
                                 await thread.delete()
                                 print(f"Successfully deleted thread {thread.id}")
@@ -394,8 +394,9 @@ async def process_channel(guild, channel, delete_after):
                                 else:
                                     print(f"HTTP error when deleting thread: {e}")
                                     await asyncio.sleep(1)
-                            except Exception as e:
-                                print(f"Error deleting thread {thread.id}: {e}")
+                    except Exception as e:
+                        # Thread doesn't exist or other error - we can safely ignore this
+                        pass
 
                     # Original message deletion code
                     await message.delete()
