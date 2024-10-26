@@ -1183,12 +1183,23 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
                                 try:
                                     print(f"Attempting to delete archived thread ID: {thread.id}")
                                     print(f"Thread state - Archived: {thread.archived}, Locked: {thread.locked}, Type: {thread.type}")
+                                    
+                                    # First try to unarchive the thread
+                                    try:
+                                        print(f"Attempting to unarchive thread {thread.id} before deletion")
+                                        await thread.edit(archived=False)
+                                        await asyncio.sleep(0.5)  # Give Discord a moment to process the unarchive
+                                        print(f"Successfully unarchived thread {thread.id}")
+                                    except Exception as unarchive_e:
+                                        print(f"Error unarchiving thread {thread.id}: {str(unarchive_e)}")
+                                    
+                                    # Now try to delete it
                                     await thread.delete()
                                     threads_deleted += 1
                                     try:
-                                        print(f"Successfully deleted archived orphaned thread {thread.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {thread.id}) in channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
+                                        print(f"Successfully deleted formerly-archived orphaned thread {thread.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {thread.id}) in channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
                                     except UnicodeEncodeError:
-                                        print(f"Successfully deleted archived orphaned thread ID: {thread.id} in channel ID: {channel.id}")
+                                        print(f"Successfully deleted formerly-archived orphaned thread ID: {thread.id} in channel ID: {channel.id}")
                                     await asyncio.sleep(0.5)  # Rate limiting
                                 except discord.Forbidden as e:
                                     print(f"Forbidden error deleting archived thread {thread.id}: {str(e)}")
