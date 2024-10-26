@@ -366,24 +366,41 @@ async def process_channel(guild, channel, delete_after):
         async def delete_attempt():
             while True:
                 try:
-                    # Check if this message has a thread attached to it
-                    if hasattr(message, 'thread') and message.thread:
+                    # Try to find any thread started from this message
+                    thread = None
+                    for t in channel.threads:
+                        # Use message id to identify parent message of thread
+                        if t.parent_id == message.id:
+                            thread = t
+                            break
+                    
+                    if not thread:
+                        # Also check archived threads
                         try:
-                            thread = message.thread
+                            async for t in channel.archived_threads():
+                                if t.parent_id == message.id:
+                                    thread = t
+                                    break
+                        except (Forbidden, HTTPException) as e:
+                            print(f"Error checking archived threads for message {message.id}: {e}")
+
+                    # If we found a thread, delete it
+                    if thread:
+                        try:
                             await thread.delete()
-                            print(f"Deleted thread {thread.id} attached to message {message.id} in channel {channel.id}")
+                            print(f"Deleted thread {thread.id} with parent message {message.id} in channel {channel.id}")
                             await asyncio.sleep(0.5)
                         except NotFound:
-                            print(f"Thread already deleted for message {message.id} in channel {channel.id}")
+                            print(f"Thread {thread.id} not found in channel {channel.id}, guild {guild.id}")
                         except Forbidden:
-                            print(f"Forbidden to delete thread for message {message.id} in channel {channel.id}")
+                            print(f"Forbidden to delete thread {thread.id} in channel {channel.id}, guild {guild.id}")
                         except HTTPException as e:
                             if e.status == 429:  # Rate limit error
                                 retry_after = e.retry_after
-                                print(f"Rate limited when deleting thread. Waiting for {retry_after} seconds.")
+                                print(f"Rate limited when deleting thread {thread.id}. Waiting for {retry_after} seconds.")
                                 await asyncio.sleep(retry_after)
                             else:
-                                print(f"HTTP error when deleting thread: {e}")
+                                print(f"HTTP error when deleting thread {thread.id}: {e}")
                                 await asyncio.sleep(1)
 
                     # Original message deletion code
