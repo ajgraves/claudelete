@@ -373,31 +373,25 @@ async def process_channel(guild, channel, delete_after):
         async def delete_attempt():
             while True:
                 try:
-                    # Try to fetch the thread if this message started one
-                    try:
-                        thread = await channel.fetch_thread(message.id)
-                        if thread:
+                    # Check if this message has created a thread
+                    for thread in message.channel.threads:
+                        if thread.starting_message and thread.starting_message.id == message.id:
                             try:
                                 await thread.delete()
-                                print(f"Deleted thread {thread.id} with parent message {message.id} in channel {channel.id}")
+                                print(f"Deleted thread {thread.id} started by message {message.id} in channel {channel.id}")
                                 await asyncio.sleep(0.5)
                             except NotFound:
-                                print(f"Thread {thread.id} not found in channel {channel.id}, guild {guild.id}")
+                                print(f"Thread already deleted in channel {channel.id}")
                             except Forbidden:
-                                print(f"Forbidden to delete thread {thread.id} in channel {channel.id}, guild {guild.id}")
+                                print(f"Forbidden to delete thread in channel {channel.id}")
                             except HTTPException as e:
                                 if e.status == 429:
                                     retry_after = e.retry_after
-                                    print(f"Rate limited when deleting thread {thread.id}. Waiting for {retry_after} seconds.")
+                                    print(f"Rate limited when deleting thread. Waiting for {retry_after} seconds.")
                                     await asyncio.sleep(retry_after)
                                 else:
-                                    print(f"HTTP error when deleting thread {thread.id}: {e}")
+                                    print(f"HTTP error when deleting thread: {e}")
                                     await asyncio.sleep(1)
-                    except NotFound:
-                        # No thread found for this message, which is normal for most messages
-                        pass
-                    except HTTPException as e:
-                        print(f"Error fetching thread for message {message.id}: {e}")
 
                     # Original message deletion code
                     await message.delete()
