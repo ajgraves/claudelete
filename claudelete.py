@@ -373,51 +373,54 @@ async def process_channel(guild, channel, delete_after):
         async def delete_attempt():
             while True:
                 try:
-                    # Check for any threads started by this message
+                    # Store thread information before deleting the message
+                    threads_to_delete = []
+                    
+                    # Check active threads
                     for thread in message.channel.threads:
-                        if thread.parent_id == message.id:  # This is the correct way to check
-                            try:
-                                await thread.delete()
-                                print(f"Deleted thread {thread.id} started by message {message.id} in channel {channel.id}")
-                                await asyncio.sleep(0.5)
-                            except NotFound:
-                                print(f"Thread already deleted in channel {channel.id}")
-                            except Forbidden:
-                                print(f"Forbidden to delete thread in channel {channel.id}")
-                            except HTTPException as e:
-                                if e.status == 429:
-                                    retry_after = e.retry_after
-                                    print(f"Rate limited when deleting thread. Waiting for {retry_after} seconds.")
-                                    await asyncio.sleep(retry_after)
-                                else:
-                                    print(f"HTTP error when deleting thread: {e}")
-                                    await asyncio.sleep(1)
-
-                    # Also check archived threads
+                        if hasattr(thread, 'id') and hasattr(thread, 'parent_id'):
+                            print(f"Checking thread {thread.id} with parent_id {thread.parent_id} against message {message.id}")
+                            if thread.parent_id == message.id:
+                                threads_to_delete.append(thread)
+                    
+                    # Check archived threads
                     try:
                         async for thread in message.channel.archived_threads():
-                            if thread.parent_id == message.id:
-                                try:
-                                    await thread.delete()
-                                    print(f"Deleted archived thread {thread.id} started by message {message.id} in channel {channel.id}")
-                                    await asyncio.sleep(0.5)
-                                except NotFound:
-                                    print(f"Archived thread already deleted in channel {channel.id}")
-                                except Forbidden:
-                                    print(f"Forbidden to delete archived thread in channel {channel.id}")
-                                except HTTPException as e:
-                                    if e.status == 429:
-                                        retry_after = e.retry_after
-                                        print(f"Rate limited when deleting archived thread. Waiting for {retry_after} seconds.")
-                                        await asyncio.sleep(retry_after)
-                                    else:
-                                        print(f"HTTP error when deleting archived thread: {e}")
-                                        await asyncio.sleep(1)
+                            if hasattr(thread, 'id') and hasattr(thread, 'parent_id'):
+                                print(f"Checking archived thread {thread.id} with parent_id {thread.parent_id} against message {message.id}")
+                                if thread.parent_id == message.id:
+                                    threads_to_delete.append(thread)
                     except Exception as e:
-                        print(f"Error checking archived threads: {e}")
+                        print(f"Error checking archived threads for message {message.id}: {e}")
 
-                    # Original message deletion code
+                    if threads_to_delete:
+                        print(f"Found {len(threads_to_delete)} threads to delete for message {message.id}")
+
+                    # Delete the message first
                     await message.delete()
+
+                    # Now delete any threads we found
+                    for thread in threads_to_delete:
+                        try:
+                            print(f"Attempting to delete thread {thread.id} from message {message.id}")
+                            await thread.delete()
+                            print(f"Successfully deleted thread {thread.id} that was attached to message {message.id}")
+                            await asyncio.sleep(0.5)
+                        except NotFound:
+                            print(f"Thread {thread.id} was already deleted")
+                        except Forbidden:
+                            print(f"Forbidden to delete thread {thread.id}")
+                        except HTTPException as e:
+                            if e.status == 429:
+                                retry_after = e.retry_after
+                                print(f"Rate limited when deleting thread {thread.id}. Waiting for {retry_after} seconds.")
+                                await asyncio.sleep(retry_after)
+                            else:
+                                print(f"HTTP error when deleting thread {thread.id}: {e}")
+                                await asyncio.sleep(1)
+                        except Exception as e:
+                            print(f"Error deleting thread {thread.id}: {e}")
+
                     return True
                 except HTTPException as e:
                     if e.status == 429:  # Rate limit error
