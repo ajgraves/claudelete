@@ -242,6 +242,102 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
     except UnicodeEncodeError:
         print(f"Checking channel with unsupported characters (ID: {channel.id})")
     
+    async def process_messages_in_thread(thread, is_archived=False):
+        nonlocal purged_count, total_messages_checked
+        thread_last_message_id = None
+        
+        while True:
+            try:
+                message_count = 0
+                async for message in thread.history(limit=DELETE_USER_MESSAGES_BATCH_SIZE, 
+                                                  before=discord.Object(id=thread_last_message_id) if thread_last_message_id else None):
+                    message_count += 1
+                    total_messages_checked += 1
+                    thread_last_message_id = message.id
+
+                    if message.author.name.lower() == username.lower():
+                        try:
+                            async with rate_limiter:
+                                await message.delete()
+                            purged_count += 1
+                            await progress_queue.put(1)
+                            
+                            if purged_count % 10 == 0:
+                                try:
+                                    print(f"Progress update - Thread in channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}")
+                                except UnicodeEncodeError:
+                                    print(f"Progress update - Thread in channel ID: {channel.id}, Messages checked: {total_messages_checked}, Messages deleted: {purged_count}")
+                        
+                        except discord.errors.NotFound:
+                            pass
+                        except discord.errors.Forbidden:
+                            errors.append(f"No permission to delete messages in thread in {channel.name}")
+                            return
+                        except discord.errors.HTTPException as e:
+                            if e.status == 429:
+                                retry_after = e.retry_after
+                                errors.append(f"Rate limited in thread in {channel.name}. Waiting for {retry_after:.2f} seconds.")
+                                print(f"Rate limit hit in thread. Waiting for {retry_after:.2f} seconds before continuing.")
+                                await asyncio.sleep(retry_after)
+                                try:
+                                    async with rate_limiter:
+                                        await message.delete()
+                                    purged_count += 1
+                                    await progress_queue.put(1)
+                                except Exception as retry_e:
+                                    errors.append(f"Error after rate limit in thread in {channel.name}: {str(retry_e)}")
+                            else:
+                                errors.append(f"HTTP error in thread in {channel.name}: {str(e)}")
+                        except Exception as e:
+                            errors.append(f"Error in thread in {channel.name}: {str(e)}")
+
+                        await asyncio.sleep(random.uniform(0.5, 1.0))
+
+                if message_count < DELETE_USER_MESSAGES_BATCH_SIZE:
+                    break
+
+                await asyncio.sleep(random.uniform(1, 2))
+
+            except discord.errors.Forbidden:
+                errors.append(f"No permission to access messages in thread in {channel.name}")
+                break
+            except discord.errors.HTTPException as e:
+                if e.status == 429:
+                    retry_after = e.retry_after
+                    errors.append(f"Rate limited while fetching messages in thread in {channel.name}. Waiting for {retry_after:.2f} seconds.")
+                    print(f"Rate limit hit while fetching thread messages. Waiting for {retry_after:.2f} seconds before continuing.")
+                    await asyncio.sleep(retry_after)
+                else:
+                    errors.append(f"HTTP error while fetching messages in thread in {channel.name}: {str(e)}")
+                    break
+            except Exception as e:
+                errors.append(f"Unexpected error in thread in {channel.name}: {str(e)}")
+                break
+
+    # Process active threads
+    for thread in channel.threads:
+        try:
+            print(f"Checking active thread: {thread.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {thread.id})")
+        except UnicodeEncodeError:
+            print(f"Checking active thread with ID: {thread.id}")
+        
+        await process_messages_in_thread(thread)
+
+    # Process archived threads
+    try:
+        async for thread in channel.archived_threads():
+            try:
+                print(f"Checking archived thread: {thread.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {thread.id})")
+            except UnicodeEncodeError:
+                print(f"Checking archived thread with ID: {thread.id}")
+            
+            await process_messages_in_thread(thread, is_archived=True)
+    except discord.Forbidden:
+        errors.append(f"No permission to list archived threads in {channel.name}")
+    except Exception as e:
+        errors.append(f"Error listing archived threads in {channel.name}: {str(e)}")
+
+    # Now process the main channel messages (existing code)
     last_message_id = None
     while True:
         try:
