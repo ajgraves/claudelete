@@ -1184,54 +1184,52 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
                                     print(f"Attempting to delete archived thread ID: {thread.id}")
                                     print(f"Thread state - Archived: {thread.archived}, Locked: {thread.locked}, Type: {thread.type}")
                                     
-                                    # First try to unarchive the thread
+                                    # Unarchive and immediately delete without delay
                                     try:
                                         print(f"Attempting to unarchive thread {thread.id} before deletion")
                                         await thread.edit(archived=False)
-                                        await asyncio.sleep(0.5)  # Give Discord a moment to process the unarchive
-                                        print(f"Successfully unarchived thread {thread.id}")
-                                    except Exception as unarchive_e:
-                                        print(f"Error unarchiving thread {thread.id}: {str(unarchive_e)}")
-                                    
-                                    # Now try to delete it
-                                    await thread.delete()
-                                    threads_deleted += 1
-                                    try:
-                                        print(f"Successfully deleted formerly-archived orphaned thread {thread.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {thread.id}) in channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
-                                    except UnicodeEncodeError:
-                                        print(f"Successfully deleted formerly-archived orphaned thread ID: {thread.id} in channel ID: {channel.id}")
-                                    await asyncio.sleep(0.5)  # Rate limiting
-                                except discord.Forbidden as e:
-                                    print(f"Forbidden error deleting archived thread {thread.id}: {str(e)}")
-                                    try:
-                                        channel_errors.append(f"No permission to delete archived thread in {channel.name}")
-                                    except UnicodeEncodeError:
-                                        channel_errors.append(f"No permission to delete archived thread in channel ID: {channel.id}")
-                                except discord.HTTPException as e:
-                                    print(f"HTTP error deleting archived thread {thread.id}: {str(e)} (Status: {e.status}, Code: {e.code})")
-                                    if e.status == 429:
-                                        retry_after = e.retry_after
-                                        print(f"Rate limited when deleting archived thread. Waiting for {retry_after:.2f} seconds.")
-                                        await asyncio.sleep(retry_after)
-                                        # Retry the deletion
+                                        print(f"Successfully unarchived thread {thread.id}, attempting immediate deletion")
+                                        # Immediately try to delete without delay
+                                        await thread.delete()
+                                        threads_deleted += 1
                                         try:
-                                            await thread.delete()
-                                            threads_deleted += 1
-                                        except Exception as retry_e:
-                                            print(f"Retry failed for archived thread {thread.id}: {str(retry_e)}")
-                                            try:
-                                                channel_errors.append(f"Error deleting archived thread in {channel.name} after rate limit: {str(retry_e)}")
-                                            except UnicodeEncodeError:
-                                                channel_errors.append(f"Error deleting archived thread in channel ID: {channel.id} after rate limit: {str(retry_e)}")
-                                    else:
-                                        try:
-                                            channel_errors.append(f"HTTP error deleting archived thread in {channel.name}: {str(e)}")
+                                            print(f"Successfully deleted formerly-archived orphaned thread {thread.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {thread.id}) in channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
                                         except UnicodeEncodeError:
-                                            channel_errors.append(f"HTTP error deleting archived thread in channel ID: {channel.id}: {str(e)}")
-                                except Exception as e:
-                                    print(f"Unexpected error deleting archived thread {thread.id}: {str(e)}")
-                                    print(f"Error type: {type(e)}")
-                                    print(f"Full error traceback: {traceback.format_exc()}")
+                                            print(f"Successfully deleted formerly-archived orphaned thread ID: {thread.id} in channel ID: {channel.id}")
+                                    except discord.Forbidden as e:
+                                        print(f"Forbidden error during unarchive/delete sequence for thread {thread.id}: {str(e)}")
+                                        try:
+                                            channel_errors.append(f"No permission to unarchive/delete thread in {channel.name}")
+                                        except UnicodeEncodeError:
+                                            channel_errors.append(f"No permission to unarchive/delete thread in channel ID: {channel.id}")
+                                    except discord.HTTPException as e:
+                                        print(f"HTTP error during unarchive/delete sequence for thread {thread.id}: {str(e)} (Status: {e.status}, Code: {e.code})")
+                                        if e.status == 429:
+                                            retry_after = e.retry_after
+                                            print(f"Rate limited during unarchive/delete sequence. Waiting for {retry_after:.2f} seconds.")
+                                            await asyncio.sleep(retry_after)
+                                            # Retry the sequence
+                                            try:
+                                                await thread.edit(archived=False)
+                                                await thread.delete()
+                                                threads_deleted += 1
+                                            except Exception as retry_e:
+                                                print(f"Retry failed for thread {thread.id}: {str(retry_e)}")
+                                                try:
+                                                    channel_errors.append(f"Error during unarchive/delete retry in {channel.name}: {str(retry_e)}")
+                                                except UnicodeEncodeError:
+                                                    channel_errors.append(f"Error during unarchive/delete retry in channel ID: {channel.id}: {str(retry_e)}")
+                                    except Exception as e:
+                                        print(f"Unexpected error during unarchive/delete sequence for thread {thread.id}: {str(e)}")
+                                        print(f"Error type: {type(e)}")
+                                        print(f"Full error traceback: {traceback.format_exc()}")
+                                    
+                                    # Rate limiting delay after the entire operation
+                                    await asyncio.sleep(0.5)
+                                    
+                                except Exception as outer_e:
+                                    print(f"Outer exception during thread handling {thread.id}: {str(outer_e)}")
+                                    print(f"Full outer error traceback: {traceback.format_exc()}")
                     except Exception as e:
                         try:
                             channel_errors.append(f"Error checking thread in {channel.name}: {str(e)}")
