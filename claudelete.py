@@ -245,12 +245,24 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
     async def process_messages_in_thread(thread, is_archived=False):
         nonlocal purged_count, total_messages_checked
         thread_last_message_id = None
+
+        # If thread is archived, try to unarchive it first
+        if is_archived:
+            try:
+                print(f"Attempting to unarchive thread {thread.id} before processing messages")
+                await thread.edit(archived=False)
+                # No sleep here to avoid potential auto-archiving
+                print(f"Successfully unarchived thread {thread.id}")
+            except Exception as unarchive_e:
+                print(f"Error unarchiving thread {thread.id}: {str(unarchive_e)}")
+                errors.append(f"Could not unarchive thread in {channel.name}: {str(unarchive_e)}")
+                return  # Skip this thread if we can't unarchive it
         
         while True:
             try:
                 message_count = 0
                 async for message in thread.history(limit=DELETE_USER_MESSAGES_BATCH_SIZE, 
-                                                  before=discord.Object(id=thread_last_message_id) if thread_last_message_id else None):
+                                                before=discord.Object(id=thread_last_message_id) if thread_last_message_id else None):
                     message_count += 1
                     total_messages_checked += 1
                     thread_last_message_id = message.id
