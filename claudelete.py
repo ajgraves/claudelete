@@ -247,25 +247,25 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
 
                 if message.author.name.lower() == username.lower():
                     try:
-                        # Check for and delete threads first
-                        if hasattr(message, 'threads') and message.threads:
-                            for thread in message.threads:
-                                try:
-                                    await thread.delete()
-                                    print(f"Deleted thread {thread.id} from message {message.id} in channel {channel.id}")
-                                    await asyncio.sleep(0.5)
-                                except NotFound:
-                                    pass
-                                except Forbidden:
-                                    errors.append(f"No permission to delete threads in {channel.name}")
-                                except HTTPException as e:
-                                    if e.status == 429:
-                                        retry_after = e.retry_after
-                                        errors.append(f"Rate limited when deleting thread in {channel.name}. Waiting for {retry_after:.2f} seconds.")
-                                        await asyncio.sleep(retry_after)
-                                    else:
-                                        errors.append(f"HTTP error when deleting thread in {channel.name}: {str(e)}")
-                                        await asyncio.sleep(1)
+                        # Check for and delete thread first
+                        if hasattr(message, 'thread') and message.thread:
+                            try:
+                                thread = message.thread
+                                await thread.delete()
+                                print(f"Deleted thread {thread.id} attached to message {message.id} in channel {channel.id}")
+                                await asyncio.sleep(0.5)
+                            except NotFound:
+                                print(f"Thread already deleted for message {message.id} in channel {channel.id}")
+                            except Forbidden:
+                                errors.append(f"No permission to delete thread in {channel.name}")
+                            except HTTPException as e:
+                                if e.status == 429:  # Rate limit error
+                                    retry_after = e.retry_after
+                                    errors.append(f"Rate limited when deleting thread in {channel.name}. Waiting for {retry_after:.2f} seconds.")
+                                    await asyncio.sleep(retry_after)
+                                else:
+                                    errors.append(f"HTTP error when deleting thread in {channel.name}: {str(e)}")
+                                    await asyncio.sleep(1)
 
                         # Original message deletion
                         async with rate_limiter:
@@ -366,27 +366,25 @@ async def process_channel(guild, channel, delete_after):
         async def delete_attempt():
             while True:
                 try:
-                    # Add thread deletion here, before message deletion
-                    if hasattr(message, 'threads') and message.threads:
-                        for thread in message.threads:
-                            try:
-                                await thread.delete()
-                                print(f"Deleted thread {thread.id} from message {message.id} in channel {channel.id}")
-                                await asyncio.sleep(0.5)  # Add small delay between thread deletions
-                            except NotFound:
-                                print(f"Thread {thread.id} not found in channel {channel.id}, guild {guild.id}")
-                            except Forbidden:
-                                print(f"Forbidden to delete thread {thread.id} in channel {channel.id}, guild {guild.id}")
-                            except HTTPException as e:
-                                if e.status == 429:  # Rate limit error
-                                    retry_after = e.retry_after
-                                    print(f"Rate limited when deleting thread {thread.id}. Waiting for {retry_after} seconds.")
-                                    await asyncio.sleep(retry_after)
-                                else:
-                                    print(f"HTTP error when deleting thread {thread.id}: {e}")
-                                    await asyncio.sleep(1)
-                            except Exception as e:
-                                print(f"Error deleting thread {thread.id}: {e}")
+                    # Check if this message has a thread attached to it
+                    if hasattr(message, 'thread') and message.thread:
+                        try:
+                            thread = message.thread
+                            await thread.delete()
+                            print(f"Deleted thread {thread.id} attached to message {message.id} in channel {channel.id}")
+                            await asyncio.sleep(0.5)
+                        except NotFound:
+                            print(f"Thread already deleted for message {message.id} in channel {channel.id}")
+                        except Forbidden:
+                            print(f"Forbidden to delete thread for message {message.id} in channel {channel.id}")
+                        except HTTPException as e:
+                            if e.status == 429:  # Rate limit error
+                                retry_after = e.retry_after
+                                print(f"Rate limited when deleting thread. Waiting for {retry_after} seconds.")
+                                await asyncio.sleep(retry_after)
+                            else:
+                                print(f"HTTP error when deleting thread: {e}")
+                                await asyncio.sleep(1)
 
                     # Original message deletion code
                     await message.delete()
@@ -914,25 +912,25 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
             
             if rate_limit["remaining"] > 0:
                 try:
-                    # Check for and delete threads first
-                    if hasattr(message, 'threads') and message.threads:
-                        for thread in message.threads:
-                            try:
-                                await thread.delete()
-                                print(f"Deleted thread {thread.id} from message {message.id} in channel {channel.id}")
-                                await asyncio.sleep(0.5)
-                            except discord.errors.NotFound:
-                                pass  # Thread already deleted
-                            except discord.errors.Forbidden:
-                                print(f"No permission to delete thread in channel: {channel.id}")
-                            except discord.errors.HTTPException as e:
-                                if e.status == 429:  # Rate limit error
-                                    retry_after = e.retry_after
-                                    print(f"Rate limited when deleting thread. Waiting for {retry_after:.2f} seconds.")
-                                    await asyncio.sleep(retry_after)
-                                else:
-                                    print(f"HTTP error while deleting thread: {e}")
-                                    await asyncio.sleep(1)
+                    # Check for and delete thread first
+                    if hasattr(message, 'thread') and message.thread:
+                        try:
+                            thread = message.thread
+                            await thread.delete()
+                            print(f"Deleted thread {thread.id} attached to message {message.id} in channel {channel.id}")
+                            await asyncio.sleep(0.5)
+                        except discord.errors.NotFound:
+                            print(f"Thread already deleted for message {message.id} in channel {channel.id}")
+                        except discord.errors.Forbidden:
+                            print(f"No permission to delete thread in channel: {channel.id}")
+                        except discord.errors.HTTPException as e:
+                            if e.status == 429:  # Rate limit error
+                                retry_after = e.retry_after
+                                print(f"Rate limited when deleting thread. Waiting for {retry_after:.2f} seconds.")
+                                await asyncio.sleep(retry_after)
+                            else:
+                                print(f"HTTP error while deleting thread: {e}")
+                                await asyncio.sleep(1)
 
                     # Original message deletion
                     await message.delete()
