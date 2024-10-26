@@ -1266,10 +1266,12 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
     
     if channel_errors:
         summary += "\nErrors encountered:\n"
-        for error in channel_errors[:10]:  # Limit to first 10 errors
+        #for error in channel_errors[:10]:  # Limit to first 10 errors
+        #    summary += f"- {error}\n"
+        #if len(channel_errors) > 10:
+        #    summary += f"... and {len(channel_errors) - 10} more errors."
+        for error in channel_errors:
             summary += f"- {error}\n"
-        if len(channel_errors) > 10:
-            summary += f"... and {len(channel_errors) - 10} more errors."
 
     # Print the final summary to console
     print("\nFinal Summary of Orphaned Thread Search:")
