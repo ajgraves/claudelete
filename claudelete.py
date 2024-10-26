@@ -19,11 +19,10 @@ import traceback
 import importlib
 import cdconfig
 # For debugging purposes, enable these lines
-import logging
-
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger('discord')
-logger.setLevel(logging.DEBUG)
+#import logging
+#logging.basicConfig(level=logging.DEBUG)
+#logger = logging.getLogger('discord')
+#logger.setLevel(logging.DEBUG)
 # End of debugging lines. Please comment and uncomment as needed.
 
 intents = discord.Intents.default()
@@ -1185,9 +1184,9 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
                                     await thread.delete()
                                     threads_deleted += 1
                                     try:
-                                        print(f"Deleted orphaned thread {thread.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {thread.id}) in channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
+                                        print(f"Deleted archived orphaned thread {thread.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {thread.id}) in channel {channel.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {channel.id})")
                                     except UnicodeEncodeError:
-                                        print(f"Deleted orphaned thread ID: {thread.id} in channel ID: {channel.id}")
+                                        print(f"Deleted archived orphaned thread ID: {thread.id} in channel ID: {channel.id}")
                                     await asyncio.sleep(0.5)  # Rate limiting
                                 except discord.Forbidden:
                                     try:
