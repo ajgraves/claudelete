@@ -254,25 +254,29 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
 
                 if message.author.name.lower() == username.lower():
                     try:
-                        # Check for and delete thread first
-                        if hasattr(message, 'thread') and message.thread:
-                            try:
-                                thread = message.thread
-                                await thread.delete()
-                                print(f"Deleted thread {thread.id} attached to message {message.id} in channel {channel.id}")
-                                await asyncio.sleep(0.5)
-                            except NotFound:
-                                print(f"Thread already deleted for message {message.id} in channel {channel.id}")
-                            except Forbidden:
-                                errors.append(f"No permission to delete thread in {channel.name}")
-                            except HTTPException as e:
-                                if e.status == 429:  # Rate limit error
-                                    retry_after = e.retry_after
-                                    errors.append(f"Rate limited when deleting thread in {channel.name}. Waiting for {retry_after:.2f} seconds.")
-                                    await asyncio.sleep(retry_after)
-                                else:
-                                    errors.append(f"HTTP error when deleting thread in {channel.name}: {str(e)}")
-                                    await asyncio.sleep(1)
+                        # Check for and delete thread if it exists
+                        try:
+                            thread = message.channel.get_thread(message.id)
+                            if thread:
+                                try:
+                                    await thread.delete()
+                                    print(f"Deleted thread {thread.id} attached to message {message.id} in channel {channel.id}")
+                                    await asyncio.sleep(0.5)
+                                except NotFound:
+                                    pass
+                                except Forbidden:
+                                    errors.append(f"No permission to delete thread in {channel.name}")
+                                except HTTPException as e:
+                                    if e.status == 429:
+                                        retry_after = e.retry_after
+                                        errors.append(f"Rate limited when deleting thread in {channel.name}. Waiting for {retry_after:.2f} seconds.")
+                                        await asyncio.sleep(retry_after)
+                                    else:
+                                        errors.append(f"HTTP error when deleting thread in {channel.name}: {str(e)}")
+                                        await asyncio.sleep(1)
+                        except Exception:
+                            # Thread doesn't exist or other error - we can safely ignore this
+                            pass
 
                         # Original message deletion
                         async with rate_limiter:
@@ -924,25 +928,29 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
             
             if rate_limit["remaining"] > 0:
                 try:
-                    # Check for and delete thread first
-                    if hasattr(message, 'thread') and message.thread:
-                        try:
-                            thread = message.thread
-                            await thread.delete()
-                            print(f"Deleted thread {thread.id} attached to message {message.id} in channel {channel.id}")
-                            await asyncio.sleep(0.5)
-                        except discord.errors.NotFound:
-                            print(f"Thread already deleted for message {message.id} in channel {channel.id}")
-                        except discord.errors.Forbidden:
-                            print(f"No permission to delete thread in channel: {channel.id}")
-                        except discord.errors.HTTPException as e:
-                            if e.status == 429:  # Rate limit error
-                                retry_after = e.retry_after
-                                print(f"Rate limited when deleting thread. Waiting for {retry_after:.2f} seconds.")
-                                await asyncio.sleep(retry_after)
-                            else:
-                                print(f"HTTP error while deleting thread: {e}")
-                                await asyncio.sleep(1)
+                    # Check for and delete thread if it exists
+                    try:
+                        thread = message.channel.get_thread(message.id)
+                        if thread:
+                            try:
+                                await thread.delete()
+                                print(f"Deleted thread {thread.id} attached to message {message.id} in channel {channel.id}")
+                                await asyncio.sleep(0.5)
+                            except discord.errors.NotFound:
+                                pass  # Thread already deleted
+                            except discord.errors.Forbidden:
+                                print(f"No permission to delete thread in channel: {channel.id}")
+                            except discord.errors.HTTPException as e:
+                                if e.status == 429:  # Rate limit error
+                                    retry_after = e.retry_after
+                                    print(f"Rate limited when deleting thread. Waiting for {retry_after:.2f} seconds.")
+                                    await asyncio.sleep(retry_after)
+                                else:
+                                    print(f"HTTP error while deleting thread: {e}")
+                                    await asyncio.sleep(1)
+                    except Exception:
+                        # Thread doesn't exist or other error - we can safely ignore this
+                        pass
 
                     # Original message deletion
                     await message.delete()
@@ -1054,6 +1062,146 @@ async def purge_channel(interaction: discord.Interaction, channel: discord.TextC
         error_message = f"An unexpected error occurred in channel ID: {channel.id}, Guild ID: {interaction.guild.id}: {str(e)}"
         print(error_message)
         await interaction.followup.send(error_message, ephemeral=True)
+
+@bot.tree.command(name="find_orphaned_threads", description="Find threads whose parent messages have been deleted")
+@app_commands.describe(
+    delete_orphans="Whether to delete the orphaned threads that are found (default: False)"
+)
+@app_commands.checks.has_permissions(moderate_members=True)
+async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans: bool = False):
+    await interaction.response.defer(ephemeral=True)
+    
+    if not interaction.guild.me.guild_permissions.manage_threads:
+        await interaction.followup.send("I don't have permission to manage threads in this server.", ephemeral=True)
+        return
+
+    orphaned_threads = []
+    threads_checked = 0
+    threads_deleted = 0
+    channel_errors = []
+
+    await interaction.followup.send("Searching for orphaned threads. This might take a while...", ephemeral=True)
+
+    for channel in interaction.guild.channels:
+        # Skip channels that can't contain threads
+        if not isinstance(channel, (discord.TextChannel, discord.ForumChannel)):
+            continue
+
+        if not channel.permissions_for(interaction.guild.me).view_channel:
+            channel_errors.append(f"No permission to view channel: {channel.name}")
+            continue
+
+        try:
+            # Check active threads
+            for thread in channel.threads:
+                threads_checked += 1
+                try:
+                    # Try to fetch the parent message
+                    try:
+                        parent_message = await channel.fetch_message(thread.id)
+                    except (discord.NotFound, discord.HTTPException):
+                        # Parent message doesn't exist - this is an orphaned thread
+                        orphaned_threads.append((channel, thread))
+                        
+                        if delete_orphans:
+                            try:
+                                await thread.delete()
+                                threads_deleted += 1
+                                print(f"Deleted orphaned thread {thread.id} in channel {channel.id}")
+                                await asyncio.sleep(0.5)  # Rate limiting
+                            except discord.Forbidden:
+                                channel_errors.append(f"No permission to delete thread in {channel.name}")
+                            except discord.HTTPException as e:
+                                if e.status == 429:
+                                    retry_after = e.retry_after
+                                    print(f"Rate limited when deleting thread. Waiting for {retry_after:.2f} seconds.")
+                                    await asyncio.sleep(retry_after)
+                                    # Retry the deletion
+                                    try:
+                                        await thread.delete()
+                                        threads_deleted += 1
+                                    except Exception as retry_e:
+                                        channel_errors.append(f"Error deleting thread in {channel.name} after rate limit: {str(retry_e)}")
+                                else:
+                                    channel_errors.append(f"HTTP error deleting thread in {channel.name}: {str(e)}")
+                except Exception as e:
+                    channel_errors.append(f"Error checking thread in {channel.name}: {str(e)}")
+
+            # Also check archived threads
+            try:
+                async for thread in channel.archived_threads():
+                    threads_checked += 1
+                    try:
+                        # Try to fetch the parent message
+                        try:
+                            parent_message = await channel.fetch_message(thread.id)
+                        except (discord.NotFound, discord.HTTPException):
+                            # Parent message doesn't exist - this is an orphaned thread
+                            orphaned_threads.append((channel, thread))
+                            
+                            if delete_orphans:
+                                try:
+                                    await thread.delete()
+                                    threads_deleted += 1
+                                    print(f"Deleted orphaned thread {thread.id} in channel {channel.id}")
+                                    await asyncio.sleep(0.5)  # Rate limiting
+                                except discord.Forbidden:
+                                    channel_errors.append(f"No permission to delete thread in {channel.name}")
+                                except discord.HTTPException as e:
+                                    if e.status == 429:
+                                        retry_after = e.retry_after
+                                        print(f"Rate limited when deleting thread. Waiting for {retry_after:.2f} seconds.")
+                                        await asyncio.sleep(retry_after)
+                                        # Retry the deletion
+                                        try:
+                                            await thread.delete()
+                                            threads_deleted += 1
+                                        except Exception as retry_e:
+                                            channel_errors.append(f"Error deleting thread in {channel.name} after rate limit: {str(retry_e)}")
+                                    else:
+                                        channel_errors.append(f"HTTP error deleting thread in {channel.name}: {str(e)}")
+                    except Exception as e:
+                        channel_errors.append(f"Error checking thread in {channel.name}: {str(e)}")
+            except discord.Forbidden:
+                channel_errors.append(f"No permission to list archived threads in {channel.name}")
+            except Exception as e:
+                channel_errors.append(f"Error listing archived threads in {channel.name}: {str(e)}")
+
+        except discord.Forbidden:
+            channel_errors.append(f"No permission to list threads in {channel.name}")
+            continue
+        except Exception as e:
+            channel_errors.append(f"Error processing channel {channel.name}: {str(e)}")
+            continue
+
+    # Prepare the summary message
+    summary = f"Found {len(orphaned_threads)} orphaned threads out of {threads_checked} threads checked.\n\n"
+    
+    if delete_orphans:
+        summary += f"Successfully deleted {threads_deleted} orphaned threads.\n\n"
+
+    if orphaned_threads:
+        summary += "Orphaned threads found in:\n"
+        for channel, thread in orphaned_threads:
+            summary += f"- #{channel.name}: {thread.name} (ID: {thread.id})\n"
+    
+    if channel_errors:
+        summary += "\nErrors encountered:\n"
+        for error in channel_errors[:10]:  # Limit to first 10 errors
+            summary += f"- {error}\n"
+        if len(channel_errors) > 10:
+            summary += f"... and {len(channel_errors) - 10} more errors."
+
+    # Split the message if it's too long
+    if len(summary) > 2000:
+        chunks = [summary[i:i+1990] for i in range(0, len(summary), 1990)]
+        for i, chunk in enumerate(chunks):
+            if i == 0:
+                await interaction.followup.send(chunk, ephemeral=True)
+            else:
+                await interaction.followup.send(chunk, ephemeral=True)
+    else:
+        await interaction.followup.send(summary, ephemeral=True)
 
 @bot.tree.command(name="show_logs", description="Show recent logs for the Claudelete bot")
 @app_commands.checks.has_permissions(moderate_members=True)
