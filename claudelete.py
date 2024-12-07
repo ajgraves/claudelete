@@ -99,13 +99,16 @@ task_semaphore = ResizableSemaphore(MAX_CONCURRENT_TASKS)
 
 class AutoDeleteBot(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix=None, intents=intents)
+        super().__init__(command_prefix='!', intents=intents)
 
     async def setup_hook(self):
         await self.tree.sync()
         print(f"Synced slash commands for {self.user}")
 
 bot = AutoDeleteBot()
+
+async def process_commands(self, message):
+    return  # Do nothing, effectively ignoring text commands
 
 class RateLimiter:
     def __init__(self, max_calls: int, period: float):
