@@ -240,10 +240,12 @@ def update_channel_info(connection, guild, channel):
 def cleanup_inaccessible_channels(connection):
     try:
         cursor = connection.cursor()
-        cursor.execute("""
-            DELETE FROM channel_config 
-            WHERE last_updated < DATE_SUB(NOW(), INTERVAL %s MINUTE)
-        """, (CHANNEL_ACCESS_TIMEOUT,))
+        threshold = datetime.now() - timedelta(minutes=CHANNEL_ACCESS_TIMEOUT)
+        #cursor.execute("""
+        #    DELETE FROM channel_config 
+        #    WHERE last_updated < DATE_SUB(NOW(), INTERVAL %s MINUTE)
+        #""", (CHANNEL_ACCESS_TIMEOUT,))
+        cursor.execute("DELETE FROM channel_config WHERE last_updated < %s", (threshold,))
         if cursor.rowcount > 0:
             print(f"Removed {cursor.rowcount} channel(s) due to prolonged inaccessibility")
         connection.commit()
