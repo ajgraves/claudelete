@@ -102,7 +102,7 @@ class AutoDeleteBot(commands.Bot):
         super().__init__(command_prefix='!', intents=intents)
 
     async def process_commands(self, message):
-    return  # Do nothing, effectively ignoring text commands
+        return  # Do nothing, effectively ignoring text commands
 
     async def setup_hook(self):
         await self.tree.sync()
