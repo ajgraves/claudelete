@@ -99,7 +99,7 @@ task_semaphore = ResizableSemaphore(MAX_CONCURRENT_TASKS)
 
 class AutoDeleteBot(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix='!', intents=intents)
+        super().__init__(command_prefix=None, intents=intents)
 
     async def setup_hook(self):
         await self.tree.sync()
