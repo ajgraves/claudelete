@@ -901,7 +901,7 @@ async def add_channel(interaction: discord.Interaction, channel: Union[discord.T
 @bot.tree.command(name="remove_channel", description="Remove a channel from auto-delete")
 @app_commands.describe(channel="The channel to remove from auto-delete")
 @app_commands.checks.has_permissions(manage_channels=True)
-async def remove_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+async def remove_channel(interaction: discord.Interaction, channel: Union[discord.TextChannel, discord.VoiceChannel]):
     connection = create_connection()
     if connection:
         try:
