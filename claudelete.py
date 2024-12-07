@@ -18,6 +18,7 @@ from collections import defaultdict
 import traceback
 import importlib
 import cdconfig
+from typing import Union
 # For debugging purposes, enable these lines
 #import logging
 #logging.basicConfig(level=logging.DEBUG)
@@ -56,6 +57,9 @@ PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100)  #
 
 # PROCESS_CHANNEL_TIMEOUT tells Claudelete how long it should wait on a delete operation before it times out in process_channel
 PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15)
+
+# CHANNEL_ACCESS_TIMEOUT will allow Claudelete to remove channels it hasn't had access to for the configured amount of time
+CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60)  # Default 24 hours in minutes
 
 ## Class definitions
 class ResizableSemaphore:
@@ -162,8 +166,9 @@ def reload_config():
         DELETE_USER_MESSAGES_BATCH_SIZE = getattr(cdconfig, 'DELETE_USER_MESSAGES_BATCH_SIZE', 100)  # Batch size for delete_user_messages()
         PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100)  # Batch size for purge_channel()
         PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15) # Timeout for delete operation in process_channel()
+        CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60)  # Remove channels we can't access after X minutes (24h default)
         last_config_reload_time = current_time
-        print(f"Configuration reloaded, new values:\nTASK_INTERVAL_SECONDS={TASK_INTERVAL_SECONDS}\nCONFIG_RELOAD_INTERVAL={CONFIG_RELOAD_INTERVAL}\nMAX_CONCURRENT_TASKS={MAX_CONCURRENT_TASKS}\nPROCESS_CHANNEL_BATCH_SIZE={PROCESS_CHANNEL_BATCH_SIZE}\nDELETE_USER_MESSAGES_BATCH_SIZE={DELETE_USER_MESSAGES_BATCH_SIZE}\nPURGE_CHANNEL_BATCH_SIZE={PURGE_CHANNEL_BATCH_SIZE}\nPROCESS_CHANNEL_TIMEOUT={PROCESS_CHANNEL_TIMEOUT}")
+        print(f"Configuration reloaded, new values:\nTASK_INTERVAL_SECONDS={TASK_INTERVAL_SECONDS}\nCONFIG_RELOAD_INTERVAL={CONFIG_RELOAD_INTERVAL}\nMAX_CONCURRENT_TASKS={MAX_CONCURRENT_TASKS}\nPROCESS_CHANNEL_BATCH_SIZE={PROCESS_CHANNEL_BATCH_SIZE}\nDELETE_USER_MESSAGES_BATCH_SIZE={DELETE_USER_MESSAGES_BATCH_SIZE}\nPURGE_CHANNEL_BATCH_SIZE={PURGE_CHANNEL_BATCH_SIZE}\nPROCESS_CHANNEL_TIMEOUT={PROCESS_CHANNEL_TIMEOUT}\nCHANNEL_ACCESS_TIMEOUT={CHANNEL_ACCESS_TIMEOUT}")
 
 def create_connection():
     try:
@@ -184,6 +189,9 @@ def init_database():
                     guild_id BIGINT,
                     channel_id BIGINT,
                     delete_after INT,
+                    guild_name VARCHAR(255),
+                    channel_name VARCHAR(255),
+                    last_updated DATETIME,
                     UNIQUE KEY guild_channel (guild_id, channel_id)
                 )
             """)
@@ -193,6 +201,53 @@ def init_database():
         finally:
             cursor.close()
             connection.close()
+
+def migrate_database():
+    connection = create_connection()
+    if connection:
+        try:
+            cursor = connection.cursor()
+            # Check if new columns exist
+            cursor.execute("SHOW COLUMNS FROM channel_config LIKE 'guild_name'")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE channel_config ADD COLUMN guild_name VARCHAR(255)")
+                cursor.execute("ALTER TABLE channel_config ADD COLUMN channel_name VARCHAR(255)")
+                cursor.execute("ALTER TABLE channel_config ADD COLUMN last_updated DATETIME")
+                connection.commit()
+        except Error as e:
+            print(f"Error migrating database: {e}")
+        finally:
+            cursor.close()
+            connection.close()
+
+def update_channel_info(connection, guild, channel):
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            UPDATE channel_config 
+            SET guild_name = %s, channel_name = %s, last_updated = NOW() 
+            WHERE guild_id = %s AND channel_id = %s
+        """, (guild.name, channel.name, guild.id, channel.id))
+        connection.commit()
+    except Error as e:
+        print(f"Error updating channel info: {e}")
+    finally:
+        cursor.close()
+
+def cleanup_inaccessible_channels(connection):
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            DELETE FROM channel_config 
+            WHERE last_updated < DATE_SUB(NOW(), INTERVAL %s MINUTE)
+        """, (CHANNEL_ACCESS_TIMEOUT,))
+        if cursor.rowcount > 0:
+            print(f"Removed {cursor.rowcount} channel(s) due to prolonged inaccessibility")
+        connection.commit()
+    except Error as e:
+        print(f"Error cleaning up inaccessible channels: {e}")
+    finally:
+        cursor.close()
 
 def convert_to_minutes(time: int, unit: str) -> int:
     unit = unit.lower()
@@ -462,6 +517,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     init_database()
+    migrate_database()
     reload_config()
     bot.loop.create_task(continuous_delete_old_messages())
 
@@ -667,6 +723,7 @@ async def delete_old_messages_task():
     connection = create_connection()
     if connection:
         try:
+            cleanup_inaccessible_channels(connection)
             cursor = connection.cursor(MySQLdb.cursors.DictCursor)
             cursor.execute("SELECT * FROM channel_config")
             configs = cursor.fetchall()
@@ -695,12 +752,22 @@ async def delete_old_messages_task():
                     print(f"Channel does not exist in guild (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
                     continue
 
-                if not channel.permissions_for(guild.me).read_messages:
-                    print(f"Bot doesn't have permission to read messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
-                    continue
+                #if not channel.permissions_for(guild.me).read_messages:
+                #    print(f"Bot doesn't have permission to read messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
+                #    continue
 
-                if not channel.permissions_for(guild.me).manage_messages:
-                    print(f"Bot doesn't have permission to delete messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
+                #if not channel.permissions_for(guild.me).manage_messages:
+                #    print(f"Bot doesn't have permission to delete messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
+                #    continue
+                if channel.permissions_for(guild.me).read_messages:
+                    # Update channel information since we have access
+                    update_channel_info(connection, guild, channel)
+                    
+                    if not channel.permissions_for(guild.me).manage_messages:
+                        print(f"Bot doesn't have permission to delete messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
+                        continue
+                else:
+                    print(f"Bot doesn't have permission to read messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
                     continue
 
                 # In delete_old_messages_task, where we check permissions:
@@ -798,7 +865,7 @@ def get_text_channels(guild):
     app_commands.Choice(name="Weeks", value="weeks")
 ])
 @app_commands.checks.has_permissions(manage_channels=True)
-async def add_channel(interaction: discord.Interaction, channel: discord.TextChannel, time: int, unit: str):
+async def add_channel(interaction: discord.Interaction, channel: Union[discord.TextChannel, discord.VoiceChannel], time: int, unit: str):
     # Check if the bot has permission to manage messages in the channel
     if not channel.permissions_for(interaction.guild.me).manage_messages:
         await interaction.response.send_message(f"Error: I don't have permission to manage messages in {channel.name}. Please grant me the 'Manage Messages' permission in this channel before adding it.", ephemeral=True)
@@ -814,8 +881,13 @@ async def add_channel(interaction: discord.Interaction, channel: discord.TextCha
     if connection:
         try:
             cursor = connection.cursor()
-            sql = "INSERT INTO channel_config (guild_id, channel_id, delete_after) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE delete_after = %s"
-            val = (interaction.guild_id, channel.id, minutes, minutes)
+            sql = """INSERT INTO channel_config 
+                    (guild_id, channel_id, delete_after, guild_name, channel_name, last_updated) 
+                    VALUES (%s, %s, %s, %s, %s, NOW()) 
+                    ON DUPLICATE KEY UPDATE 
+                    delete_after = %s, guild_name = %s, channel_name = %s, last_updated = NOW()"""
+            val = (interaction.guild_id, channel.id, minutes, interaction.guild.name, channel.name, 
+                minutes, interaction.guild.name, channel.name)
             cursor.execute(sql, val)
             connection.commit()
             await interaction.response.send_message(f'Channel {channel.name} added. Messages will be deleted after {format_time(minutes)}.')
@@ -1007,7 +1079,7 @@ async def purge_user(interaction: discord.Interaction, username: str):
 @bot.tree.command(name="purge_channel", description="Purge all messages from a specific channel")
 @app_commands.describe(channel="The channel to purge messages from")
 @app_commands.checks.has_permissions(moderate_members=True)
-async def purge_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+async def purge_channel(interaction: discord.Interaction, channel: Union[discord.TextChannel, discord.VoiceChannel]):
     await interaction.response.defer(ephemeral=True)
 
     await interaction.followup.send(f"Starting purge operation for channel: {channel}. **NOTE:** Due to Discord limitations, you may stop getting progress updates about this process. Rest assured, the process will continue running until it successfully completes.", ephemeral=True)

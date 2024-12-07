@@ -25,3 +25,6 @@ PURGE_CHANNEL_BATCH_SIZE = 100          # Batch size for purge_channel()
 
 # PROCESS_CHANNEL_TIMEOUT tells Claudelete how long it should wait on a delete operation before it times out in process_channel
 PROCESS_CHANNEL_TIMEOUT = 15
+
+# CHANNEL_ACCESS_TIMEOUT will allow Claudelete to remove channels it hasn't had access to for the configured amount of time
+CHANNEL_ACCESS_TIMEOUT = 24*60          # Default 24 hours in minutes
