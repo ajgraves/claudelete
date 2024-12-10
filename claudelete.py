@@ -51,7 +51,7 @@ class ConfigManager:
         self.PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100) # Batch size for purge_channel()
         self.PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15) # PROCESS_CHANNEL_TIMEOUT tells Claudelete how long it should wait on a delete operation before it times out in process_channel
         self.CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60) # CHANNEL_ACCESS_TIMEOUT will allow Claudelete to remove channels it hasn't had access to for the configured amount of time
-        self.last_reload_time = 0
+        self.last_reload_time = time.time()
 
     def reload_config(self):
         """Reload configuration from cdconfig module"""
