@@ -37,31 +37,89 @@ channels_in_progress = set()
 # Global dict to keep track of long-running tasks
 channel_tasks = {}
 
-# Configurable maximum number of concurrent tasks
-MAX_CONCURRENT_TASKS = getattr(cdconfig, 'MAX_CONCURRENT_TASKS', 25)
-
 # Global progress queue
 progress_queue = asyncio.Queue()
 
-# How often the bot should check channels.
-TASK_INTERVAL_SECONDS = getattr(cdconfig, 'TASK_INTERVAL_SECONDS', 60)  # Default to 60 seconds, but you can change this value in cdconfig.py
-
-# Global variable to store the last config reload time
-last_config_reload_time = 0 # Was 0, BUT it should be the current time, since we've loaded the configuration on program load
-CONFIG_RELOAD_INTERVAL = getattr(cdconfig, 'CONFIG_RELOAD_INTERVAL', 300)  # Reload config every 5 minutes (adjust as needed in cdconfig.py)
-
-# Various configurable batch sizes, that will be read from the configuration file and periodically reloaded
-PROCESS_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PROCESS_CHANNEL_BATCH_SIZE', 250)  # Batch size for process_channel()
-DELETE_USER_MESSAGES_BATCH_SIZE = getattr(cdconfig, 'DELETE_USER_MESSAGES_BATCH_SIZE', 100)  # Batch size for delete_user_messages()
-PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100)  # Batch size for purge_channel()
-
-# PROCESS_CHANNEL_TIMEOUT tells Claudelete how long it should wait on a delete operation before it times out in process_channel
-PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15)
-
-# CHANNEL_ACCESS_TIMEOUT will allow Claudelete to remove channels it hasn't had access to for the configured amount of time
-CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60)  # Default 24 hours in minutes
-
 ## Class definitions
+class ConfigManager:
+    def __init__(self):
+        self.TASK_INTERVAL_SECONDS = getattr(cdconfig, 'TASK_INTERVAL_SECONDS', 60) # Default to 60 seconds, but you can change this value in cdconfig.py
+        self.CONFIG_RELOAD_INTERVAL = getattr(cdconfig, 'CONFIG_RELOAD_INTERVAL', 300) # Reload config every 5 minutes (adjust as needed in cdconfig.py)
+        self.MAX_CONCURRENT_TASKS = getattr(cdconfig, 'MAX_CONCURRENT_TASKS', 25) # Configurable maximum number of concurrent tasks
+        self.PROCESS_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PROCESS_CHANNEL_BATCH_SIZE', 250) # Batch size for process_channel()
+        self.DELETE_USER_MESSAGES_BATCH_SIZE = getattr(cdconfig, 'DELETE_USER_MESSAGES_BATCH_SIZE', 100) # Batch size for delete_user_messages()
+        self.PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100) # Batch size for purge_channel()
+        self.PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15) # PROCESS_CHANNEL_TIMEOUT tells Claudelete how long it should wait on a delete operation before it times out in process_channel
+        self.CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60) # CHANNEL_ACCESS_TIMEOUT will allow Claudelete to remove channels it hasn't had access to for the configured amount of time
+        self.last_reload_time = 0
+
+    def reload_config(self):
+        """Reload configuration from cdconfig module"""
+        importlib.reload(cdconfig)
+        
+        # Store old values for comparison
+        old_values = self.get_current_values()
+        
+        # Update values
+        self.TASK_INTERVAL_SECONDS = getattr(cdconfig, 'TASK_INTERVAL_SECONDS', 60)
+        self.CONFIG_RELOAD_INTERVAL = getattr(cdconfig, 'CONFIG_RELOAD_INTERVAL', 300)
+        self.MAX_CONCURRENT_TASKS = getattr(cdconfig, 'MAX_CONCURRENT_TASKS', 25)
+        self.PROCESS_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PROCESS_CHANNEL_BATCH_SIZE', 250)
+        self.DELETE_USER_MESSAGES_BATCH_SIZE = getattr(cdconfig, 'DELETE_USER_MESSAGES_BATCH_SIZE', 100)
+        self.PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100)
+        self.PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15)
+        self.CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60)
+        
+        # Get new values
+        new_values = self.get_current_values()
+        
+        # Compare and log changes
+        changes = self.compare_values(old_values, new_values)
+        if changes:
+            print("Configuration changes detected:")
+            for var, (old, new) in changes.items():
+                print(f"  {var}: {old} -> {new}")
+        else:
+            print("Configuration reloaded - no changes detected")
+        
+        self.last_reload_time = time.time()
+        
+        # If MAX_CONCURRENT_TASKS changed, update the semaphore
+        if 'MAX_CONCURRENT_TASKS' in changes:
+            task_semaphore.resize(self.MAX_CONCURRENT_TASKS)
+
+    def get_current_values(self):
+        """Return dictionary of current configuration values"""
+        return {
+            'TASK_INTERVAL_SECONDS': self.TASK_INTERVAL_SECONDS,
+            'CONFIG_RELOAD_INTERVAL': self.CONFIG_RELOAD_INTERVAL,
+            'MAX_CONCURRENT_TASKS': self.MAX_CONCURRENT_TASKS,
+            'PROCESS_CHANNEL_BATCH_SIZE': self.PROCESS_CHANNEL_BATCH_SIZE,
+            'DELETE_USER_MESSAGES_BATCH_SIZE': self.DELETE_USER_MESSAGES_BATCH_SIZE,
+            'PURGE_CHANNEL_BATCH_SIZE': self.PURGE_CHANNEL_BATCH_SIZE,
+            'PROCESS_CHANNEL_TIMEOUT': self.PROCESS_CHANNEL_TIMEOUT,
+            'CHANNEL_ACCESS_TIMEOUT': self.CHANNEL_ACCESS_TIMEOUT
+        }
+
+    @staticmethod
+    def compare_values(old_values, new_values):
+        """Compare old and new values, return dictionary of changes"""
+        changes = {}
+        for key in old_values:
+            if old_values[key] != new_values[key]:
+                changes[key] = (old_values[key], new_values[key])
+        return changes
+
+# Create global config manager instance
+config = ConfigManager()
+
+# Replace reload_config function
+def reload_config():
+    current_time = time.time()
+    if current_time - config.last_reload_time > config.CONFIG_RELOAD_INTERVAL:
+        config.reload_config()
+
+
 class ResizableSemaphore:
     def __init__(self, value):
         self._semaphore = asyncio.Semaphore(value)
@@ -95,7 +153,7 @@ class ResizableSemaphore:
 
 # Semaphore to limit concurrent tasks
 #task_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
-task_semaphore = ResizableSemaphore(MAX_CONCURRENT_TASKS)
+task_semaphore = ResizableSemaphore(config.MAX_CONCURRENT_TASKS)
 
 class AutoDeleteBot(commands.Bot):
     def __init__(self):
@@ -152,26 +210,6 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
         print(f"Failed to send error message to user for command: {interaction.command.name}")
 
 # Database configuration is now in config.py
-
-# Function to reload the configuration
-def reload_config():
-    global last_config_reload_time, TASK_INTERVAL_SECONDS, CONFIG_RELOAD_INTERVAL, MAX_CONCURRENT_TASKS, task_semaphore, PROCESS_CHANNEL_BATCH_SIZE, DELETE_USER_MESSAGES_BATCH_SIZE, PURGE_CHANNEL_BATCH_SIZE, PROCESS_CHANNEL_TIMEOUT, CHANNEL_ACCESS_TIMEOUT
-    current_time = time.time()
-    if current_time - last_config_reload_time > CONFIG_RELOAD_INTERVAL:
-        importlib.reload(cdconfig)
-        TASK_INTERVAL_SECONDS = getattr(cdconfig, 'TASK_INTERVAL_SECONDS', 60)
-        CONFIG_RELOAD_INTERVAL = getattr(cdconfig, 'CONFIG_RELOAD_INTERVAL', 300)
-        new_max_tasks = getattr(cdconfig, 'MAX_CONCURRENT_TASKS', 25)
-        if new_max_tasks != MAX_CONCURRENT_TASKS:
-            task_semaphore.resize(new_max_tasks)
-            MAX_CONCURRENT_TASKS = new_max_tasks
-        PROCESS_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PROCESS_CHANNEL_BATCH_SIZE', 250)  # Batch size for process_channel()
-        DELETE_USER_MESSAGES_BATCH_SIZE = getattr(cdconfig, 'DELETE_USER_MESSAGES_BATCH_SIZE', 100)  # Batch size for delete_user_messages()
-        PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100)  # Batch size for purge_channel()
-        PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15) # Timeout for delete operation in process_channel()
-        CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60)  # Remove channels we can't access after X minutes (24h default)
-        last_config_reload_time = current_time
-        print(f"Configuration reloaded, new values:\nTASK_INTERVAL_SECONDS={TASK_INTERVAL_SECONDS}\nCONFIG_RELOAD_INTERVAL={CONFIG_RELOAD_INTERVAL}\nMAX_CONCURRENT_TASKS={MAX_CONCURRENT_TASKS}\nPROCESS_CHANNEL_BATCH_SIZE={PROCESS_CHANNEL_BATCH_SIZE}\nDELETE_USER_MESSAGES_BATCH_SIZE={DELETE_USER_MESSAGES_BATCH_SIZE}\nPURGE_CHANNEL_BATCH_SIZE={PURGE_CHANNEL_BATCH_SIZE}\nPROCESS_CHANNEL_TIMEOUT={PROCESS_CHANNEL_TIMEOUT}\nCHANNEL_ACCESS_TIMEOUT={CHANNEL_ACCESS_TIMEOUT}")
 
 def create_connection():
     try:
@@ -240,7 +278,7 @@ def update_channel_info(connection, guild, channel):
 def cleanup_inaccessible_channels(connection):
     try:
         cursor = connection.cursor()
-        threshold = datetime.now() - timedelta(minutes=CHANNEL_ACCESS_TIMEOUT)
+        threshold = datetime.now() - timedelta(minutes=config.CHANNEL_ACCESS_TIMEOUT)
         #cursor.execute("""
         #    DELETE FROM channel_config 
         #    WHERE last_updated < DATE_SUB(NOW(), INTERVAL %s MINUTE)
@@ -321,7 +359,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
         while True:
             try:
                 message_count = 0
-                async for message in thread.history(limit=DELETE_USER_MESSAGES_BATCH_SIZE, 
+                async for message in thread.history(limit=config.DELETE_USER_MESSAGES_BATCH_SIZE, 
                                                 before=discord.Object(id=thread_last_message_id) if thread_last_message_id else None):
                     message_count += 1
                     total_messages_checked += 1
@@ -592,7 +630,7 @@ async def process_channel(guild, channel, delete_after):
                     return False
 
         try:
-            return await asyncio.wait_for(delete_attempt(), timeout=PROCESS_CHANNEL_TIMEOUT)
+            return await asyncio.wait_for(delete_attempt(), timeout=config.PROCESS_CHANNEL_TIMEOUT)
         except TimeoutError:
             print(f"Delete operation timed out for message {message.id} in channel {channel.id}, guild {guild.id}")
             return False
@@ -788,7 +826,7 @@ async def delete_old_messages_task():
                 total_checked = 0
                 completed_tasks = 0
                 try:
-                    done, pending = await asyncio.wait(new_tasks, timeout=TASK_INTERVAL_SECONDS, return_when=asyncio.ALL_COMPLETED)
+                    done, pending = await asyncio.wait(new_tasks, timeout=config.TASK_INTERVAL_SECONDS, return_when=asyncio.ALL_COMPLETED)
                     for task in done:
                         try:
                             result = task.result()
@@ -831,8 +869,8 @@ async def continuous_delete_old_messages():
             elapsed_time = end_time - start_time
             
             # If the task completed in less than the interval, wait for the remaining time
-            if elapsed_time < TASK_INTERVAL_SECONDS:
-                wait_time = TASK_INTERVAL_SECONDS - elapsed_time
+            if elapsed_time < config.TASK_INTERVAL_SECONDS:
+                wait_time = config.TASK_INTERVAL_SECONDS - elapsed_time
                 print(f"Ran for {elapsed_time:.2f} seconds, waiting for {wait_time:.2f} seconds before next iteration")
                 await asyncio.sleep(wait_time)
 
@@ -1173,7 +1211,7 @@ async def purge_channel(interaction: discord.Interaction, channel: Union[discord
                     await asyncio.sleep(wait_time)
             
             try:
-                async for message in channel.history(limit=PURGE_CHANNEL_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None):
+                async for message in channel.history(limit=config.PURGE_CHANNEL_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None):
                     messages.append(message)
                     history_rate_limit["remaining"] -= 1
                     if history_rate_limit["remaining"] <= 0:
