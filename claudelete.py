@@ -643,7 +643,7 @@ async def process_channel(guild, channel, delete_after):
 
             # Use the deletion_cutoff as the initial 'before' parameter
             history_params = {
-                'limit': PROCESS_CHANNEL_BATCH_SIZE,
+                'limit': config.PROCESS_CHANNEL_BATCH_SIZE,
                 'before': discord.Object(id=cutoff_snowflake),
                 'oldest_first': False
             }
