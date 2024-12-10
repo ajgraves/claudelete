@@ -855,7 +855,7 @@ async def continuous_delete_old_messages():
     progress_task = asyncio.create_task(update_progress())
     try:
         while True:
-            print("Starting new iteration of continuous_delete_old_messages")
+            #print("Starting new iteration of continuous_delete_old_messages")
             reload_config()  # This will check and reload the config if necessary
             start_time = asyncio.get_event_loop().time()
             print(f"Starting delete_old_messages_task at {start_time}")
@@ -864,7 +864,7 @@ async def continuous_delete_old_messages():
             
             end_time = asyncio.get_event_loop().time()
             elapsed_time = end_time - start_time
-            print(f"Finished delete_old_messages_task. Elapsed time: {elapsed_time:.2f} seconds")
+            #print(f"Finished delete_old_messages_task. Elapsed time: {elapsed_time:.2f} seconds")
             
             if elapsed_time < botconfig.TASK_INTERVAL_SECONDS:
                 wait_time = botconfig.TASK_INTERVAL_SECONDS - elapsed_time
