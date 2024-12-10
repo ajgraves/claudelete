@@ -155,7 +155,7 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 
 # Function to reload the configuration
 def reload_config():
-    global last_config_reload_time, TASK_INTERVAL_SECONDS, CONFIG_RELOAD_INTERVAL, MAX_CONCURRENT_TASKS, task_semaphore, PROCESS_CHANNEL_BATCH_SIZE, DELETE_USER_MESSAGES_BATCH_SIZE, PURGE_CHANNEL_BATCH_SIZE
+    global last_config_reload_time, TASK_INTERVAL_SECONDS, CONFIG_RELOAD_INTERVAL, MAX_CONCURRENT_TASKS, task_semaphore, PROCESS_CHANNEL_BATCH_SIZE, DELETE_USER_MESSAGES_BATCH_SIZE, PURGE_CHANNEL_BATCH_SIZE, PROCESS_CHANNEL_TIMEOUT, CHANNEL_ACCESS_TIMEOUT
     current_time = time.time()
     if current_time - last_config_reload_time > CONFIG_RELOAD_INTERVAL:
         importlib.reload(cdconfig)
@@ -724,7 +724,6 @@ async def update_progress():
         print("Progress update task cancelled")
 
 async def delete_old_messages_task():
-    #print("Starting delete_old_messages_task")
     connection = create_connection()
     if connection:
         try:
@@ -738,10 +737,11 @@ async def delete_old_messages_task():
             for config in configs:
                 channel_id = config['channel_id']
                 
-                # Skip this channel if it's already being processed
-                if channel_id in channels_in_progress:
-                    print(f"Channel ID: {channel_id} is still being processed from a previous run. Skipping.")
-                    continue
+                # Skip this channel if it's already being processed, but we still need
+                # to try to update its timestamp if we can access it
+                already_processing = channel_id in channels_in_progress
+                if already_processing:
+                    print(f"Channel ID: {channel_id} is still being processed from a previous run. Will only update timestamp if accessible.")
                 
                 guild = bot.get_guild(config['guild_id'])
                 if guild is None:
@@ -757,41 +757,30 @@ async def delete_old_messages_task():
                     print(f"Channel does not exist in guild (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
                     continue
 
-                #if not channel.permissions_for(guild.me).read_messages:
-                #    print(f"Bot doesn't have permission to read messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
-                #    continue
-
-                #if not channel.permissions_for(guild.me).manage_messages:
-                #    print(f"Bot doesn't have permission to delete messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
-                #    continue
                 if channel.permissions_for(guild.me).read_messages:
-                    # Update channel information since we have access
+                    # Update channel information since we have access, regardless of whether we'll process it
                     update_channel_info(connection, guild, channel)
                     
-                    if not channel.permissions_for(guild.me).manage_messages:
-                        print(f"Bot doesn't have permission to delete messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
+                    # If we're already processing this channel, skip creating a new task
+                    if already_processing:
+                        print(f"Updated timestamp for channel {channel_id} but skipping deletion as it's still being processed")
                         continue
+                    
+                    # Only proceed with deletion if we have the necessary permissions
+                    if channel.permissions_for(guild.me).manage_messages:
+                        if not channel.permissions_for(guild.me).manage_threads:
+                            print(f"Bot doesn't have permission to manage threads in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
+                            continue
+
+                        delete_after = timedelta(minutes=config['delete_after'])
+                        task = asyncio.create_task(process_channel_wrapper(guild, channel, delete_after))
+                        channel_tasks[channel_id] = task
+                        new_tasks.append(task)
+                    else:
+                        print(f"Bot doesn't have permission to delete messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
                 else:
                     print(f"Bot doesn't have permission to read messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
                     continue
-
-                # In delete_old_messages_task, where we check permissions:
-                if not channel.permissions_for(guild.me).manage_threads:
-                    print(f"Bot doesn't have permission to manage threads in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
-                    continue
-
-                delete_after = timedelta(minutes=config['delete_after'])
-                
-                if channel.id not in channel_tasks:
-                    task = asyncio.create_task(process_channel_wrapper(guild, channel, delete_after))
-                    channel_tasks[channel.id] = task
-                    new_tasks.append(task)
-                    '''
-                    try:
-                        print(f"Created task for channel {channel.name} (ID: {channel.id})")
-                    except UnicodeEncodeError:
-                        print(f"Created task for channel ID: {channel.id}")
-                    '''
 
             # Wait for new tasks to complete or for TASK_INTERVAL_SECONDS seconds, whichever comes first
             if new_tasks:
@@ -819,7 +808,6 @@ async def delete_old_messages_task():
                 except asyncio.TimeoutError:
                     print(f"Timeout reached after {TASK_INTERVAL_SECONDS} seconds. {completed_tasks} tasks completed, {len(new_tasks) - completed_tasks} tasks are still running and will continue in the background.")
 
-            #print(f"Delete old messages task iteration complete. Channels still being processed: {len(channels_in_progress)}")
             if len(channels_in_progress) > 0:
                 print(f"Delete old messages task iteration complete, however there are {len(channels_in_progress)} Channel(s) still being processed")
 
@@ -828,7 +816,6 @@ async def delete_old_messages_task():
         finally:
             cursor.close()
             connection.close()
-    #print("Finished delete_old_messages_task iteration")
 
 async def continuous_delete_old_messages():
     progress_task = asyncio.create_task(update_progress())
