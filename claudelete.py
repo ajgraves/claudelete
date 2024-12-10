@@ -111,13 +111,13 @@ class ConfigManager:
         return changes
 
 # Create global config manager instance
-config = ConfigManager()
+botconfig = ConfigManager()
 
 # Replace reload_config function
 def reload_config():
     current_time = time.time()
-    if current_time - config.last_reload_time > config.CONFIG_RELOAD_INTERVAL:
-        config.reload_config()
+    if current_time - botconfig.last_reload_time > botconfig.CONFIG_RELOAD_INTERVAL:
+        botconfig.reload_config()
 
 
 class ResizableSemaphore:
@@ -153,7 +153,7 @@ class ResizableSemaphore:
 
 # Semaphore to limit concurrent tasks
 #task_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
-task_semaphore = ResizableSemaphore(config.MAX_CONCURRENT_TASKS)
+task_semaphore = ResizableSemaphore(botconfig.MAX_CONCURRENT_TASKS)
 
 class AutoDeleteBot(commands.Bot):
     def __init__(self):
@@ -278,7 +278,7 @@ def update_channel_info(connection, guild, channel):
 def cleanup_inaccessible_channels(connection):
     try:
         cursor = connection.cursor()
-        threshold = datetime.now() - timedelta(minutes=config.CHANNEL_ACCESS_TIMEOUT)
+        threshold = datetime.now() - timedelta(minutes=botconfig.CHANNEL_ACCESS_TIMEOUT)
         cursor.execute("DELETE FROM channel_config WHERE last_updated < %s", (threshold,))
         if cursor.rowcount > 0:
             print(f"Removed {cursor.rowcount} channel(s) due to prolonged inaccessibility")
@@ -355,7 +355,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
         while True:
             try:
                 message_count = 0
-                async for message in thread.history(limit=config.DELETE_USER_MESSAGES_BATCH_SIZE, 
+                async for message in thread.history(limit=botconfig.DELETE_USER_MESSAGES_BATCH_SIZE, 
                                                 before=discord.Object(id=thread_last_message_id) if thread_last_message_id else None):
                     message_count += 1
                     total_messages_checked += 1
@@ -399,7 +399,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
 
                         await asyncio.sleep(random.uniform(0.5, 1.0))
 
-                if message_count < config.DELETE_USER_MESSAGES_BATCH_SIZE:
+                if message_count < botconfig.DELETE_USER_MESSAGES_BATCH_SIZE:
                     break
 
                 await asyncio.sleep(random.uniform(1, 2))
@@ -448,7 +448,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
     while True:
         try:
             message_count = 0
-            async for message in channel.history(limit=config.DELETE_USER_MESSAGES_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None):
+            async for message in channel.history(limit=botconfig.DELETE_USER_MESSAGES_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None):
                 message_count += 1
                 total_messages_checked += 1
                 last_message_id = message.id
@@ -626,7 +626,7 @@ async def process_channel(guild, channel, delete_after):
                     return False
 
         try:
-            return await asyncio.wait_for(delete_attempt(), timeout=config.PROCESS_CHANNEL_TIMEOUT)
+            return await asyncio.wait_for(delete_attempt(), timeout=botconfig.PROCESS_CHANNEL_TIMEOUT)
         except TimeoutError:
             print(f"Delete operation timed out for message {message.id} in channel {channel.id}, guild {guild.id}")
             return False
@@ -639,7 +639,7 @@ async def process_channel(guild, channel, delete_after):
 
             # Use the deletion_cutoff as the initial 'before' parameter
             history_params = {
-                'limit': config.PROCESS_CHANNEL_BATCH_SIZE,
+                'limit': botconfig.PROCESS_CHANNEL_BATCH_SIZE,
                 'before': discord.Object(id=cutoff_snowflake),
                 'oldest_first': False
             }
@@ -822,7 +822,7 @@ async def delete_old_messages_task():
                 total_checked = 0
                 completed_tasks = 0
                 try:
-                    done, pending = await asyncio.wait(new_tasks, timeout=config.TASK_INTERVAL_SECONDS, return_when=asyncio.ALL_COMPLETED)
+                    done, pending = await asyncio.wait(new_tasks, timeout=botconfig.TASK_INTERVAL_SECONDS, return_when=asyncio.ALL_COMPLETED)
                     for task in done:
                         try:
                             result = task.result()
@@ -840,7 +840,7 @@ async def delete_old_messages_task():
                     if pending:
                         print(f"{len(pending)} tasks are still running and will continue in the background.")
                 except asyncio.TimeoutError:
-                    print(f"Timeout reached after {config.TASK_INTERVAL_SECONDS} seconds. {completed_tasks} tasks completed, {len(new_tasks) - completed_tasks} tasks are still running and will continue in the background.")
+                    print(f"Timeout reached after {botconfig.TASK_INTERVAL_SECONDS} seconds. {completed_tasks} tasks completed, {len(new_tasks) - completed_tasks} tasks are still running and will continue in the background.")
 
             if len(channels_in_progress) > 0:
                 print(f"Delete old messages task iteration complete, however there are {len(channels_in_progress)} Channel(s) still being processed")
@@ -866,12 +866,12 @@ async def continuous_delete_old_messages():
             elapsed_time = end_time - start_time
             print(f"Finished delete_old_messages_task. Elapsed time: {elapsed_time:.2f} seconds")
             
-            if elapsed_time < config.TASK_INTERVAL_SECONDS:
-                wait_time = config.TASK_INTERVAL_SECONDS - elapsed_time
+            if elapsed_time < botconfig.TASK_INTERVAL_SECONDS:
+                wait_time = botconfig.TASK_INTERVAL_SECONDS - elapsed_time
                 print(f"Ran for {elapsed_time:.2f} seconds, waiting for {wait_time:.2f} seconds before next iteration")
                 await asyncio.sleep(wait_time)
             else:
-                print(f"Task took longer than interval ({elapsed_time:.2f} > {config.TASK_INTERVAL_SECONDS}), starting next iteration immediately")
+                print(f"Task took longer than interval ({elapsed_time:.2f} > {botconfig.TASK_INTERVAL_SECONDS}), starting next iteration immediately")
     finally:
         progress_task.cancel()
         await progress_task
@@ -1208,7 +1208,7 @@ async def purge_channel(interaction: discord.Interaction, channel: Union[discord
                     await asyncio.sleep(wait_time)
             
             try:
-                async for message in channel.history(limit=config.PURGE_CHANNEL_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None):
+                async for message in channel.history(limit=botconfig.PURGE_CHANNEL_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None):
                     messages.append(message)
                     history_rate_limit["remaining"] -= 1
                     if history_rate_limit["remaining"] <= 0:
