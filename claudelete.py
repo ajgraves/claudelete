@@ -279,10 +279,6 @@ def cleanup_inaccessible_channels(connection):
     try:
         cursor = connection.cursor()
         threshold = datetime.now() - timedelta(minutes=config.CHANNEL_ACCESS_TIMEOUT)
-        #cursor.execute("""
-        #    DELETE FROM channel_config 
-        #    WHERE last_updated < DATE_SUB(NOW(), INTERVAL %s MINUTE)
-        #""", (CHANNEL_ACCESS_TIMEOUT,))
         cursor.execute("DELETE FROM channel_config WHERE last_updated < %s", (threshold,))
         if cursor.rowcount > 0:
             print(f"Removed {cursor.rowcount} channel(s) due to prolonged inaccessibility")
@@ -403,7 +399,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
 
                         await asyncio.sleep(random.uniform(0.5, 1.0))
 
-                if message_count < DELETE_USER_MESSAGES_BATCH_SIZE:
+                if message_count < config.DELETE_USER_MESSAGES_BATCH_SIZE:
                     break
 
                 await asyncio.sleep(random.uniform(1, 2))
@@ -452,7 +448,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
     while True:
         try:
             message_count = 0
-            async for message in channel.history(limit=DELETE_USER_MESSAGES_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None):
+            async for message in channel.history(limit=config.DELETE_USER_MESSAGES_BATCH_SIZE, before=discord.Object(id=last_message_id) if last_message_id else None):
                 message_count += 1
                 total_messages_checked += 1
                 last_message_id = message.id
@@ -844,7 +840,7 @@ async def delete_old_messages_task():
                     if pending:
                         print(f"{len(pending)} tasks are still running and will continue in the background.")
                 except asyncio.TimeoutError:
-                    print(f"Timeout reached after {TASK_INTERVAL_SECONDS} seconds. {completed_tasks} tasks completed, {len(new_tasks) - completed_tasks} tasks are still running and will continue in the background.")
+                    print(f"Timeout reached after {config.TASK_INTERVAL_SECONDS} seconds. {completed_tasks} tasks completed, {len(new_tasks) - completed_tasks} tasks are still running and will continue in the background.")
 
             if len(channels_in_progress) > 0:
                 print(f"Delete old messages task iteration complete, however there are {len(channels_in_progress)} Channel(s) still being processed")
