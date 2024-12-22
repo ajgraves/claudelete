@@ -1515,7 +1515,7 @@ async def show_logs(interaction: discord.Interaction):
     try:
         # Run the journalctl command and capture its output
         result = subprocess.run(
-            ["journalctl", "--user-unit", "claudelete-bot", "-n", "20", "--no-pager"],
+            ["journalctl", "--user-unit", "claudelete-bot", "--output", "cat", "-n", "20", "--no-pager"],
             capture_output=True,
             text=True,
             check=True
