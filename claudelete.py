@@ -566,20 +566,35 @@ async def process_channel(guild, channel, delete_after):
     utc_now = datetime.now(pytz.utc)
     last_activity_time = time.time()
     last_progress_check_time = time.time()
-    INACTIVITY_TIMEOUT = 180  # 3 minutes without any successful deletions
-    PROGRESS_CHECK_INTERVAL = 60  # Check progress every minute
+    INACTIVITY_TIMEOUT = 120  # 2 minutes without any successful operations
+    PROGRESS_CHECK_INTERVAL = 30  # Check progress every 30 seconds
 
     if delete_after.total_seconds() <= 0:
         print(f"Invalid delete_after value for channel {channel.id}: {delete_after}")
         return 0, 0
+    
+    deletion_cutoff = utc_now - delete_after
+    last_progress_time = time.time()
+    cutoff_snowflake = discord.utils.time_snowflake(deletion_cutoff)
 
     def update_activity():
         nonlocal last_activity_time
-        last_activity_time = time.time()
+        current = time.time()
+        time_since_last = current - last_activity_time
+        try:
+            print(f"Activity detected in channel {channel.name} (ID: {channel.id}). Time since last activity: {time_since_last:.2f} seconds")
+        except UnicodeEncodeError:
+            print(f"Activity detected in channel ID: {channel.id}. Time since last activity: {time_since_last:.2f} seconds")
+        last_activity_time = current
         
     def check_inactivity():
         current_time = time.time()
         inactive_duration = current_time - last_activity_time
+        
+        try:
+            print(f"Checking inactivity for channel {channel.name} (ID: {channel.id}). Time since last activity: {inactive_duration:.2f} seconds")
+        except UnicodeEncodeError:
+            print(f"Checking inactivity for channel ID: {channel.id}. Time since last activity: {inactive_duration:.2f} seconds")
         
         # If we've been inactive for too long, log and return True
         if inactive_duration >= INACTIVITY_TIMEOUT:
@@ -589,12 +604,6 @@ async def process_channel(guild, channel, delete_after):
                 print(f"Channel ID: {channel.id} in guild ID: {guild.id} has been inactive for {inactive_duration:.2f} seconds. Terminating process.")
             return True
         return False
-    
-    deletion_cutoff = utc_now - delete_after
-    last_progress_time = time.time()
-    cutoff_snowflake = discord.utils.time_snowflake(deletion_cutoff)
-
-    #print(f"Deletion cutoff time: {deletion_cutoff.isoformat()}")
 
     async def delete_with_timeout(message, channel, guild):
         async def delete_attempt():
@@ -659,8 +668,13 @@ async def process_channel(guild, channel, delete_after):
             # Check for inactivity at the start of each loop iteration
             current_time = time.time()
             if current_time - last_progress_check_time >= PROGRESS_CHECK_INTERVAL:
+                try:
+                    print(f"Running progress check for channel {channel.name} (ID: {channel.id})")
+                except UnicodeEncodeError:
+                    print(f"Running progress check for channel ID: {channel.id}")
+                    
                 if check_inactivity():
-                    print(f"No activity detected in channel {channel.id} for {INACTIVITY_TIMEOUT} seconds. Ending process.")
+                    print(f"Inactivity check returned True for channel ID: {channel.id}. Breaking process loop.")
                     break
                 last_progress_check_time = current_time
 
@@ -678,6 +692,10 @@ async def process_channel(guild, channel, delete_after):
                 message_batch.append(message)
                 messages_checked += 1
                 update_activity()  # Successfully retrieving messages counts as activity
+                try:
+                    print(f"Retrieved message from channel {channel.name} (ID: {channel.id}). Messages checked: {messages_checked}")
+                except UnicodeEncodeError:
+                    print(f"Retrieved message from channel ID: {channel.id}. Messages checked: {messages_checked}")
 
             fetch_end_time = time.time()
 
@@ -733,6 +751,12 @@ async def process_channel(guild, channel, delete_after):
             print(f"Error processing channel {channel.id} in guild {guild.id}: {e}")
             break
 
+    # Final cleanup
+    try:
+        print(f"Process ending for channel {channel.name} (ID: {channel.id}). Final stats - Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+    except UnicodeEncodeError:
+        print(f"Process ending for channel ID: {channel.id}. Final stats - Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+        
     channels_in_progress.remove(channel.id)
     del channel_tasks[channel.id]
     return delete_count, messages_checked
