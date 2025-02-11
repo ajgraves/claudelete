@@ -572,8 +572,6 @@ async def process_channel(guild, channel, delete_after):
     ABSOLUTE_TIMEOUT = 300  # 5 minutes absolute maximum runtime
 
     print(f"Starting process_channel for channel ID: {channel.id} at {start_time}")
-    last_state_log = time.time()
-    current_state = "initializing"
 
     if delete_after.total_seconds() <= 0:
         print(f"Invalid delete_after value for channel {channel.id}: {delete_after}")
@@ -583,31 +581,32 @@ async def process_channel(guild, channel, delete_after):
     last_progress_time = time.time()
     cutoff_snowflake = discord.utils.time_snowflake(deletion_cutoff)
 
-    async def log_state(new_state):
-        nonlocal current_state, last_state_log
-        current_time = time.time()
-        if current_time - last_state_log >= 10 or new_state != current_state:  # Log every 10 seconds or on state change
-            print(f"Channel {channel.id} - Current state: {new_state}, Time in state: {current_time - last_state_log:.2f}s")
-            current_state = new_state
-            last_state_log = current_time
-
-    async def check_timing():
-        nonlocal last_progress_check_time
-        current_time = time.time()
-        time_running = current_time - start_time
+    def update_activity():
+        nonlocal last_activity_time
+        current = time.time()
+        time_since_last = current - last_activity_time
+        try:
+            print(f"Activity detected in channel {channel.name} (ID: {channel.id}). Time since last activity: {time_since_last:.2f} seconds")
+        except UnicodeEncodeError:
+            print(f"Activity detected in channel ID: {channel.id}. Time since last activity: {time_since_last:.2f} seconds")
+        last_activity_time = current
         
-        if time_running >= ABSOLUTE_TIMEOUT:
-            print(f"Channel {channel.id} has exceeded absolute timeout of {ABSOLUTE_TIMEOUT} seconds. Terminating.")
+    def check_inactivity():
+        current_time = time.time()
+        inactive_duration = current_time - last_activity_time
+        
+        try:
+            print(f"Checking inactivity for channel {channel.name} (ID: {channel.id}). Time since last activity: {inactive_duration:.2f} seconds")
+        except UnicodeEncodeError:
+            print(f"Checking inactivity for channel ID: {channel.id}. Time since last activity: {inactive_duration:.2f} seconds")
+        
+        # If we've been inactive for too long, log and return True
+        if inactive_duration >= INACTIVITY_TIMEOUT:
+            try:
+                print(f"Channel {channel.name} (ID: {channel.id}) in guild {guild.name} (ID: {guild.id}) has been inactive for {inactive_duration:.2f} seconds. Terminating process.")
+            except UnicodeEncodeError:
+                print(f"Channel ID: {channel.id} in guild ID: {guild.id} has been inactive for {inactive_duration:.2f} seconds. Terminating process.")
             return True
-            
-        if current_time - last_activity_time >= INACTIVITY_TIMEOUT:
-            print(f"Channel {channel.id} has been inactive for {current_time - last_activity_time:.2f} seconds. Terminating.")
-            return True
-            
-        if current_time - last_progress_check_time >= PROGRESS_CHECK_INTERVAL:
-            print(f"Channel {channel.id} timing check - Running time: {time_running:.2f}s, Time since last activity: {current_time - last_activity_time:.2f}s")
-            last_progress_check_time = current_time
-            
         return False
 
     async def delete_with_timeout(message, channel, guild):
@@ -668,25 +667,31 @@ async def process_channel(guild, channel, delete_after):
             print(f"Delete operation timed out for message {message.id} in channel {channel.id}, guild {guild.id}")
             return False
 
-    def update_activity():
-        nonlocal last_activity_time
-        current_time = time.time()
-        time_since_last = current_time - last_activity_time
-        try:
-            print(f"Activity detected in channel {channel.name} (ID: {channel.id}). Time since last activity: {time_since_last:.2f} seconds")
-        except UnicodeEncodeError:
-            print(f"Activity detected in channel ID: {channel.id}. Time since last activity: {time_since_last:.2f} seconds")
-        last_activity_time = current_time
-
     while True:
         try:
-            should_terminate = await check_timing()
-            if should_terminate:
-                break
+            # Always check timing at the start of each loop
+            current_time = time.time()
+            time_running = current_time - start_time
+            
+            # Log timing information periodically
+            if current_time - last_progress_check_time >= PROGRESS_CHECK_INTERVAL:
+                print(f"Channel {channel.id} timing check - Running time: {time_running:.2f}s, Time since last activity: {current_time - last_activity_time:.2f}s")
+                last_progress_check_time = current_time
 
-            await log_state("fetching_history")
+                # Check for absolute timeout
+                if time_running >= ABSOLUTE_TIMEOUT:
+                    print(f"Channel {channel.id} has exceeded absolute timeout of {ABSOLUTE_TIMEOUT} seconds. Terminating.")
+                    break
+
+                # Check for inactivity
+                if current_time - last_activity_time >= INACTIVITY_TIMEOUT:
+                    print(f"Channel {channel.id} has been inactive for {current_time - last_activity_time:.2f} seconds. Terminating.")
+                    break
+
+            fetch_start_time = time.time()
             message_batch = []
 
+            # Use the deletion_cutoff as the initial 'before' parameter
             history_params = {
                 'limit': botconfig.PROCESS_CHANNEL_BATCH_SIZE,
                 'before': discord.Object(id=cutoff_snowflake),
@@ -694,31 +699,27 @@ async def process_channel(guild, channel, delete_after):
             }
 
             async for message in handle_rate_limits(channel.history(**history_params)):
-                # Check timing periodically during message fetch
-                if messages_checked % 10 == 0:
-                    await log_state("processing_messages")
-                    if await check_timing():
-                        break
-                
                 message_batch.append(message)
                 messages_checked += 1
                 update_activity()  # Successfully retrieving messages counts as activity
+                try:
+                    print(f"Retrieved message from channel {channel.name} (ID: {channel.id}). Messages checked: {messages_checked}")
+                except UnicodeEncodeError:
+                    print(f"Retrieved message from channel ID: {channel.id}. Messages checked: {messages_checked}")
+
+            fetch_end_time = time.time()
 
             if not message_batch:
                 break
 
-            await log_state("deleting_messages")
             for message in message_batch:
-                if await check_timing():
-                    break
-
                 delete_start_time = time.time()
                 try:
                     delete_success = await delete_with_timeout(message, channel, guild)
                     if delete_success:
                         delete_count += 1
                         await progress_queue.put(1)
-                        update_activity()
+                        update_activity()  # Successfully deleting a message counts as activity
                     
                     delete_end_time = time.time()
                     print(f"Delete operation took {delete_end_time - delete_start_time:.2f} seconds")
@@ -741,7 +742,16 @@ async def process_channel(guild, channel, delete_after):
                 except Exception as e:
                     print(f"Error deleting message in channel {channel.id}, guild {guild.id}: {e}")
                     await asyncio.sleep(5)
+            
+                current_time = time.time()
+                if delete_count % 10 == 0 and delete_count > 0 or current_time - last_progress_time > 60:
+                    try:
+                        print(f"Progress update - Channel: {channel.name}, Guild: {guild.name}, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+                    except UnicodeEncodeError:
+                        print(f"Progress update - Channel ID: {channel.id}, Guild ID: {guild.id}, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+                    last_progress_time = current_time
 
+            # Add a delay between batches
             await asyncio.sleep(random.uniform(0.5, 1))
 
         except Forbidden:
@@ -749,14 +759,14 @@ async def process_channel(guild, channel, delete_after):
             break
         except Exception as e:
             print(f"Error processing channel {channel.id} in guild {guild.id}: {e}")
-            print(f"Full error traceback:\n{traceback.format_exc()}")
             break
 
-    # Always log when we're ending, regardless of how we got here
-    end_time = time.time()
-    total_runtime = end_time - start_time
-    print(f"Ending process for channel {channel.id}. Runtime: {total_runtime:.2f}s, Messages checked: {messages_checked}, Messages deleted: {delete_count}")
-    
+    # Final cleanup
+    try:
+        print(f"Process ending for channel {channel.name} (ID: {channel.id}). Final stats - Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+    except UnicodeEncodeError:
+        print(f"Process ending for channel ID: {channel.id}. Final stats - Messages checked: {messages_checked}, Messages deleted: {delete_count}")
+        
     channels_in_progress.remove(channel.id)
     del channel_tasks[channel.id]
     return delete_count, messages_checked
