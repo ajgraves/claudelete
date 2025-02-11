@@ -564,31 +564,10 @@ async def process_channel(guild, channel, delete_after):
     delete_count = 0
     messages_checked = 0
     utc_now = datetime.now(pytz.utc)
-    last_activity_time = time.time()
-    last_progress_check_time = time.time()
-    INACTIVITY_TIMEOUT = 180  # 3 minutes without any successful deletions
-    PROGRESS_CHECK_INTERVAL = 60  # Check progress every minute
 
     if delete_after.total_seconds() <= 0:
         print(f"Invalid delete_after value for channel {channel.id}: {delete_after}")
         return 0, 0
-
-    def update_activity():
-        nonlocal last_activity_time
-        last_activity_time = time.time()
-        
-    def check_inactivity():
-        current_time = time.time()
-        inactive_duration = current_time - last_activity_time
-        
-        # If we've been inactive for too long, log and return True
-        if inactive_duration >= INACTIVITY_TIMEOUT:
-            try:
-                print(f"Channel {channel.name} (ID: {channel.id}) in guild {guild.name} (ID: {guild.id}) has been inactive for {inactive_duration:.2f} seconds. Terminating process.")
-            except UnicodeEncodeError:
-                print(f"Channel ID: {channel.id} in guild ID: {guild.id} has been inactive for {inactive_duration:.2f} seconds. Terminating process.")
-            return True
-        return False
     
     deletion_cutoff = utc_now - delete_after
     last_progress_time = time.time()
@@ -608,7 +587,6 @@ async def process_channel(guild, channel, delete_after):
                             try:
                                 await thread.delete()
                                 print(f"Successfully deleted thread {thread.id}")
-                                update_activity()  # Successfully deleting a thread counts as activity
                                 await asyncio.sleep(0.5)
                             except NotFound:
                                 print(f"Thread {thread.id} was already deleted")
@@ -622,13 +600,12 @@ async def process_channel(guild, channel, delete_after):
                                 else:
                                     print(f"HTTP error when deleting thread: {e}")
                                     await asyncio.sleep(1)
-                    except Exception:
+                    except Exception as e:
                         # Thread doesn't exist or other error - we can safely ignore this
                         pass
 
                     # Original message deletion code
                     await message.delete()
-                    update_activity()  # Successfully deleting a message counts as activity
                     return True
                 except HTTPException as e:
                     if e.status == 429:  # Rate limit error
@@ -656,14 +633,7 @@ async def process_channel(guild, channel, delete_after):
 
     while True:
         try:
-            # Check for inactivity at the start of each loop iteration
-            current_time = time.time()
-            if current_time - last_progress_check_time >= PROGRESS_CHECK_INTERVAL:
-                if check_inactivity():
-                    print(f"No activity detected in channel {channel.id} for {INACTIVITY_TIMEOUT} seconds. Ending process.")
-                    break
-                last_progress_check_time = current_time
-
+            #print(f"Fetching batch for channel {channel.id}, guild {guild.id}")
             fetch_start_time = time.time()
             message_batch = []
 
@@ -674,14 +644,21 @@ async def process_channel(guild, channel, delete_after):
                 'oldest_first': False
             }
 
+            # Log message to show it's working correctly
+            #print(f"Asking for messages from channel {channel.id} older than {deletion_cutoff.isoformat()}")
+            #print(f"Asking for messages from channel {channel.id} older than {deletion_cutoff.isoformat()}")
+            #print(f"History params: {history_params}")
+
             async for message in handle_rate_limits(channel.history(**history_params)):
+                #print(f"Retrieved message with ID {message.id}, created at {message.created_at.isoformat()}")
                 message_batch.append(message)
                 messages_checked += 1
-                update_activity()  # Successfully retrieving messages counts as activity
-
             fetch_end_time = time.time()
+            #print(f"Fetched {len(message_batch)} messages in {fetch_end_time - fetch_start_time:.2f} seconds")
+            #print(f"Retrieved {len(message_batch)} messages. Oldest message (if any) is from {message_batch[-1].created_at.isoformat() if message_batch else 'N/A'}")
 
             if not message_batch:
+                #print(f"No more messages to process in channel {channel.id}, guild {guild.id}")
                 break
 
             for message in message_batch:
@@ -691,7 +668,6 @@ async def process_channel(guild, channel, delete_after):
                     if delete_success:
                         delete_count += 1
                         await progress_queue.put(1)
-                        update_activity()  # Successfully deleting a message counts as activity
                     
                     delete_end_time = time.time()
                     print(f"Delete operation took {delete_end_time - delete_start_time:.2f} seconds")
