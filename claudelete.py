@@ -595,9 +595,6 @@ async def process_channel(guild, channel, delete_after):
         nonlocal last_progress_check_time
         current_time = time.time()
         time_running = current_time - start_time
-        time_since_last_check = current_time - last_progress_check_time
-        
-        print(f"Debug - Channel {channel.id} check_timing: current_time={current_time:.2f}, time_running={time_running:.2f}, time_since_last_check={time_since_last_check:.2f}, PROGRESS_CHECK_INTERVAL={PROGRESS_CHECK_INTERVAL}")
         
         if time_running >= ABSOLUTE_TIMEOUT:
             print(f"Channel {channel.id} has exceeded absolute timeout of {ABSOLUTE_TIMEOUT} seconds. Terminating.")
@@ -607,7 +604,7 @@ async def process_channel(guild, channel, delete_after):
             print(f"Channel {channel.id} has been inactive for {current_time - last_activity_time:.2f} seconds. Terminating.")
             return True
             
-        if time_since_last_check >= PROGRESS_CHECK_INTERVAL:
+        if current_time - last_progress_check_time >= PROGRESS_CHECK_INTERVAL:
             print(f"Channel {channel.id} timing check - Running time: {time_running:.2f}s, Time since last activity: {current_time - last_activity_time:.2f}s")
             last_progress_check_time = current_time
             
@@ -683,10 +680,8 @@ async def process_channel(guild, channel, delete_after):
 
     while True:
         try:
-            print(f"Debug - Channel {channel.id} starting main loop iteration")
             should_terminate = await check_timing()
             if should_terminate:
-                print(f"Debug - Channel {channel.id} terminating due to timing check")
                 break
 
             await log_state("fetching_history")
@@ -699,11 +694,11 @@ async def process_channel(guild, channel, delete_after):
             }
 
             async for message in handle_rate_limits(channel.history(**history_params)):
-                # Check timing every message during fetch
-                print(f"Debug - Channel {channel.id} checking timing during message fetch")
-                if await check_timing():
-                    print(f"Debug - Channel {channel.id} terminating during message fetch")
-                    break
+                # Check timing periodically during message fetch
+                if messages_checked % 10 == 0:
+                    await log_state("processing_messages")
+                    if await check_timing():
+                        break
                 
                 message_batch.append(message)
                 messages_checked += 1
