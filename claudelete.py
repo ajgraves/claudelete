@@ -566,12 +566,8 @@ async def process_channel(guild, channel, delete_after):
     utc_now = datetime.now(pytz.utc)
     last_activity_time = time.time()
     last_progress_check_time = time.time()
-    start_time = time.time()
     INACTIVITY_TIMEOUT = 120  # 2 minutes without any successful operations
     PROGRESS_CHECK_INTERVAL = 30  # Check progress every 30 seconds
-    ABSOLUTE_TIMEOUT = 300  # 5 minutes absolute maximum runtime
-
-    print(f"Starting process_channel for channel ID: {channel.id} at {start_time}")
 
     if delete_after.total_seconds() <= 0:
         print(f"Invalid delete_after value for channel {channel.id}: {delete_after}")
@@ -669,24 +665,18 @@ async def process_channel(guild, channel, delete_after):
 
     while True:
         try:
-            # Always check timing at the start of each loop
+            # Check for inactivity at the start of each loop iteration
             current_time = time.time()
-            time_running = current_time - start_time
-            
-            # Log timing information periodically
             if current_time - last_progress_check_time >= PROGRESS_CHECK_INTERVAL:
-                print(f"Channel {channel.id} timing check - Running time: {time_running:.2f}s, Time since last activity: {current_time - last_activity_time:.2f}s")
+                try:
+                    print(f"Running progress check for channel {channel.name} (ID: {channel.id})")
+                except UnicodeEncodeError:
+                    print(f"Running progress check for channel ID: {channel.id}")
+                    
+                if check_inactivity():
+                    print(f"Inactivity check returned True for channel ID: {channel.id}. Breaking process loop.")
+                    break
                 last_progress_check_time = current_time
-
-                # Check for absolute timeout
-                if time_running >= ABSOLUTE_TIMEOUT:
-                    print(f"Channel {channel.id} has exceeded absolute timeout of {ABSOLUTE_TIMEOUT} seconds. Terminating.")
-                    break
-
-                # Check for inactivity
-                if current_time - last_activity_time >= INACTIVITY_TIMEOUT:
-                    print(f"Channel {channel.id} has been inactive for {current_time - last_activity_time:.2f} seconds. Terminating.")
-                    break
 
             fetch_start_time = time.time()
             message_batch = []
