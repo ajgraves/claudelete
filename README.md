@@ -18,11 +18,14 @@ systemd --user start claudelete-bot.service
 If you run Claudelete from the command line, then logs are being printed to STDOUT. If you run Claudelete using the systemd service, then use the command `journalctl --user-unit claudelete-bot.service` to view the logs. You can also "tail" the logs by adding the `-f` switch to the previous command, so it would be `journalctl -f --user-unit claudelete-bot.service`.
 
 ## What data is stored in the database?
-The database holds a single table with 4 columns, they are:
+The database holds a single table titled `channel_config` with 7 columns, they are:
 1. **id** - This is a primary key on the table, and increments with each addition to the table. This is how the row is referenced for update and delete options.
 2. **guild_id** - Claudelete supports being used by multiple servers, this column holds the Discord internal numeric value for the Server it is in.
 3. **channel_id** - This is the Discord internal numeric value for the Channel that you've set rules for.
 4. **delete_after** - This is a number, in minutes, that messages should be deleted after.
+5. **guild_name** - This is the text name of the discord server, corresponding with **guild_id** above.
+6. **channel_name** - This is the text name of the channel, corresponding with **channel_id** above.
+7. **last_updated** - This is a date/time stamp when the channel was last processed. This is used by the bot to determine if the channel should be auto removed from monitoring (if it's been unreadable by the bot, or hasn't existed, for a set amount of time).
 
 ## Command Reference
 ### IMPORTANT NOTE
