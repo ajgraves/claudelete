@@ -381,7 +381,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                             return
                         except discord.errors.HTTPException as e:
                             if e.status == 429:
-                                retry_after = e.retry_after
+                                retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                                 errors.append(f"Rate limited in thread in {channel.name}. Waiting for {retry_after:.2f} seconds.")
                                 print(f"Rate limit hit in thread. Waiting for {retry_after:.2f} seconds before continuing.")
                                 await asyncio.sleep(retry_after)
@@ -394,6 +394,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                                     errors.append(f"Error after rate limit in thread in {channel.name}: {str(retry_e)}")
                             else:
                                 errors.append(f"HTTP error in thread in {channel.name}: {str(e)}")
+                                await asyncio.sleep(1)
                         except Exception as e:
                             errors.append(f"Error in thread in {channel.name}: {str(e)}")
 
@@ -409,12 +410,13 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                 break
             except discord.errors.HTTPException as e:
                 if e.status == 429:
-                    retry_after = e.retry_after
+                    retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                     errors.append(f"Rate limited while fetching messages in thread in {channel.name}. Waiting for {retry_after:.2f} seconds.")
                     print(f"Rate limit hit while fetching thread messages. Waiting for {retry_after:.2f} seconds before continuing.")
                     await asyncio.sleep(retry_after)
                 else:
                     errors.append(f"HTTP error while fetching messages in thread in {channel.name}: {str(e)}")
+                    await asyncio.sleep(1)
                     break
             except Exception as e:
                 errors.append(f"Unexpected error in thread in {channel.name}: {str(e)}")
@@ -469,7 +471,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                                     errors.append(f"No permission to delete thread in {channel.name}")
                                 except HTTPException as e:
                                     if e.status == 429:
-                                        retry_after = e.retry_after
+                                        retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                                         errors.append(f"Rate limited when deleting thread in {channel.name}. Waiting for {retry_after:.2f} seconds.")
                                         await asyncio.sleep(retry_after)
                                     else:
@@ -499,7 +501,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                         return purged_count, errors
                     except discord.errors.HTTPException as e:
                         if e.status == 429:  # Rate limit error
-                            retry_after = e.retry_after
+                            retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                             errors.append(f"Rate limited in {channel.name}. Waiting for {retry_after:.2f} seconds.")
                             print(f"Rate limit hit. Waiting for {retry_after:.2f} seconds before continuing.")
                             await asyncio.sleep(retry_after)
@@ -512,6 +514,7 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
                                 errors.append(f"Error after rate limit in {channel.name}: {str(retry_e)}")
                         else:
                             errors.append(f"HTTP error in {channel.name}: {str(e)}")
+                            await asyncio.sleep(1)
                     except Exception as e:
                         errors.append(f"Error in {channel.name}: {str(e)}")
 
@@ -534,12 +537,13 @@ async def delete_user_messages(channel: discord.TextChannel, username: str, prog
             break
         except discord.errors.HTTPException as e:
             if e.status == 429:  # Rate limit error
-                retry_after = e.retry_after
+                retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                 errors.append(f"Rate limited while fetching messages in {channel.name}. Waiting for {retry_after:.2f} seconds.")
                 print(f"Rate limit hit while fetching messages. Waiting for {retry_after:.2f} seconds before continuing.")
                 await asyncio.sleep(retry_after)
             else:
                 errors.append(f"HTTP error while fetching messages in {channel.name}: {str(e)}")
+                await asyncio.sleep(1)
                 break
         except Exception as e:
             errors.append(f"Unexpected error in {channel.name}: {str(e)}")
@@ -594,7 +598,7 @@ async def process_channel(guild, channel, delete_after):
                                 print(f"Forbidden to delete thread {thread.id}")
                             except HTTPException as e:
                                 if e.status == 429:
-                                    retry_after = e.retry_after
+                                    retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                                     print(f"Rate limited when deleting thread. Waiting for {retry_after} seconds.")
                                     await asyncio.sleep(retry_after)
                                 else:
@@ -609,7 +613,7 @@ async def process_channel(guild, channel, delete_after):
                     return True
                 except HTTPException as e:
                     if e.status == 429:  # Rate limit error
-                        retry_after = e.retry_after
+                        retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                         print(f"Rate limited when deleting message {message.id} in channel {channel.id}, guild {guild.id}. Waiting for {retry_after} seconds.")
                         await asyncio.sleep(retry_after)
                     else:
@@ -681,7 +685,7 @@ async def process_channel(guild, channel, delete_after):
                     return delete_count, messages_checked
                 except HTTPException as e:
                     if e.status == 429:  # Rate limit error
-                        retry_after = e.retry_after
+                        retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                         print(f"Rate limited when deleting message in channel {channel.id}, guild {guild.id}. Waiting for {retry_after} seconds.")
                         await asyncio.sleep(retry_after)
                     else:
@@ -721,7 +725,7 @@ async def handle_rate_limits(history_iterator):
             break
         except HTTPException as e:
             if e.status == 429:  # Rate limit error
-                retry_after = e.retry_after
+                retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                 print(f"Rate limited when fetching message history. Waiting for {retry_after} seconds.")
                 await asyncio.sleep(retry_after)
             elif e.status == 503:  # Service unavailable, shouldn't need this but here we are
@@ -1156,7 +1160,7 @@ async def purge_channel(interaction: discord.Interaction, channel: Union[discord
                                 print(f"No permission to delete thread in channel: {channel.id}")
                             except discord.errors.HTTPException as e:
                                 if e.status == 429:  # Rate limit error
-                                    retry_after = e.retry_after
+                                    retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                                     print(f"Rate limited when deleting thread. Waiting for {retry_after:.2f} seconds.")
                                     await asyncio.sleep(retry_after)
                                 else:
@@ -1178,7 +1182,7 @@ async def purge_channel(interaction: discord.Interaction, channel: Union[discord
                     return False
                 except discord.errors.HTTPException as e:
                     if e.status == 429:  # Rate limit error
-                        retry_after = e.retry_after
+                        retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                         print(f"Rate limited. Waiting for {retry_after:.2f} seconds.")
                         rate_limit["reset_after"] = now + retry_after
                         rate_limit["remaining"] = 0
@@ -1224,7 +1228,7 @@ async def purge_channel(interaction: discord.Interaction, channel: Union[discord
                     await asyncio.sleep(0.05)  # Small delay to avoid hitting rate limits too quickly
             except discord.errors.HTTPException as e:
                 if e.status == 429:  # Rate limit error
-                    retry_after = e.retry_after
+                    retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                     print(f"Rate limited while fetching messages. Waiting for {retry_after:.2f} seconds.")
                     await asyncio.sleep(retry_after)
                     continue  # Retry this batch
@@ -1353,7 +1357,7 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
                                     channel_errors.append(f"No permission to delete thread in channel ID: {channel.id}")
                             except discord.HTTPException as e:
                                 if e.status == 429:
-                                    retry_after = e.retry_after
+                                    retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                                     print(f"Rate limited when deleting thread. Waiting for {retry_after:.2f} seconds.")
                                     await asyncio.sleep(retry_after)
                                     # Retry the deletion
@@ -1420,7 +1424,7 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
                                     except discord.HTTPException as e:
                                         print(f"HTTP error during unarchive/delete sequence for thread {thread.id}: {str(e)} (Status: {e.status}, Code: {e.code})")
                                         if e.status == 429:
-                                            retry_after = e.retry_after
+                                            retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
                                             print(f"Rate limited during unarchive/delete sequence. Waiting for {retry_after:.2f} seconds.")
                                             await asyncio.sleep(retry_after)
                                             # Retry the sequence
