@@ -1055,26 +1055,26 @@ async def purge_user(interaction: discord.Interaction, username: str):
 
     progress_task = asyncio.create_task(update_progress())
 
-    tasks = []
-    async def process_channel_limited(channel, username, progress_queue):
-        async with purge_semaphore:  # Use the dedicated semaphore
+    # Collect eligible channels
+    channels_to_process = [
+        channel for channel in interaction.guild.channels
+        if hasattr(channel, 'history') and channel.permissions_for(interaction.guild.me).manage_messages
+    ]
+
+    # Process channels with semaphore control
+    async def process_channel(channel):
+        async with purge_semaphore:
             print(f"Acquired semaphore for channel {channel.id}, remaining slots: {purge_semaphore._value}")
-            return await delete_user_messages(channel, username, progress_queue)
+            result = await delete_user_messages(channel, username, progress_queue)
+            print(f"Released semaphore for channel {channel.id}, remaining slots: {purge_semaphore._value}")
+            return result
 
-    for channel in interaction.guild.channels:  #interaction.guild.text_channels:
-        if not hasattr(channel, 'history'):
-            continue  # Skip channels without history attribute
-        if channel.permissions_for(interaction.guild.me).manage_messages:
-            task = asyncio.create_task(process_channel_limited(channel, username, progress_queue))
-            tasks.append(task)
+    tasks = []
+    for channel in channels_to_process:
+        task = asyncio.create_task(process_channel(channel))
+        tasks.append(task)
 
-    try:
-        print(f"Starting purge operation for user: {username.encode('utf-8', 'replace').decode('utf-8')}")
-    except UnicodeEncodeError:
-        print(f"Starting purge operation for a user with unsupported characters")
-    
-    print(f"Number of channels to check: {len(tasks)}")
-
+    # Wait for all tasks to complete
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for result in results:
