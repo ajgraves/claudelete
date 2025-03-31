@@ -1625,6 +1625,13 @@ async def lookup_channel_error(interaction: discord.Interaction, error: app_comm
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message('Pong!')
 
+# Need help?
+@bot.tree.command(name="help", description="Get help for using this bot")
+async def help_command(interaction: discord.Interaction):
+    discord_server_link = "https://discord.gg/9FWrfPC9bv"
+    message = f"Need help with the bot? Join our support server: {discord_server_link}"
+    await interaction.response.send_message(message, ephemeral=True)
+
 # The below commands are only for fun, and are absolutely not needed in any way, shape or form for the bot to function.
 @bot.tree.command(name="marco", description="Play Marco Polo")
 async def marco(interaction: discord.Interaction):
