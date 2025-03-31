@@ -1626,7 +1626,7 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message('Pong!')
 
 # Need help?
-@bot.tree.command(name="help", description="Get help for using this bot")
+@bot.tree.command(name="help", description="Get help with using Claudelete")
 async def help_command(interaction: discord.Interaction):
     discord_server_link = "https://discord.gg/9FWrfPC9bv"
     message = f"Need help with the bot? Join our support server: {discord_server_link}"
