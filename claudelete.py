@@ -1032,6 +1032,9 @@ async def purge_user(interaction: discord.Interaction, username: str):
     total_purged = 0
     all_errors = []
 
+    # Create a dedicated semaphore for purge_user
+    purge_semaphore = ResizableSemaphore(botconfig.MAX_CONCURRENT_TASKS)
+
     async def update_progress():
         nonlocal total_purged
         last_update = 0
@@ -1049,11 +1052,16 @@ async def purge_user(interaction: discord.Interaction, username: str):
     progress_task = asyncio.create_task(update_progress())
 
     tasks = []
+    async def process_channel_limited(channel, username, progress_queue):
+        async with purge_semaphore:  # Use the dedicated semaphore
+            print(f"Acquired semaphore for channel {channel.id}, remaining slots: {purge_semaphore._value}")
+            return await delete_user_messages(channel, username, progress_queue)
+
     for channel in interaction.guild.channels:  #interaction.guild.text_channels:
         if not hasattr(channel, 'history'):
             continue  # Skip channels without history attribute
         if channel.permissions_for(interaction.guild.me).manage_messages:
-            task = asyncio.create_task(delete_user_messages(channel, username, progress_queue))
+            task = asyncio.create_task(process_channel_limited(channel, username, progress_queue))
             tasks.append(task)
 
     try:
