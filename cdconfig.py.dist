@@ -28,3 +28,12 @@ PROCESS_CHANNEL_TIMEOUT = 15
 
 # CHANNEL_ACCESS_TIMEOUT will allow Claudelete to remove channels it hasn't had access to for the configured amount of time
 CHANNEL_ACCESS_TIMEOUT = 24*60          # Default 24 hours in minutes
+
+# Authorized guilds (list of guild IDs where the bot is allowed to operate)
+AUTHORIZED_GUILDS = [123456789012345678, 987654321098765432]  # Example guild IDs
+
+# Unauthorized (banned) guilds (list of guild IDs where the bot is not allowed to operate)
+UNAUTHORIZED_GUILDS = [111111111111111111, 222222222222222222]  # Example banned guild IDs
+
+# Lockdown mode: If True, bot only operates in AUTHORIZED_GUILDS; if False, bot operates everywhere except UNAUTHORIZED_GUILDS
+LOCKDOWN_MODE = False

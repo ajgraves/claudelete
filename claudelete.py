@@ -51,6 +51,9 @@ class ConfigManager:
         self.PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100) # Batch size for purge_channel()
         self.PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15) # PROCESS_CHANNEL_TIMEOUT tells Claudelete how long it should wait on a delete operation before it times out in process_channel
         self.CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60) # CHANNEL_ACCESS_TIMEOUT will allow Claudelete to remove channels it hasn't had access to for the configured amount of time
+        self.AUTHORIZED_GUILDS = getattr(cdconfig, 'AUTHORIZED_GUILDS', [])
+        self.UNAUTHORIZED_GUILDS = getattr(cdconfig, 'UNAUTHORIZED_GUILDS', [])
+        self.LOCKDOWN_MODE = getattr(cdconfig, 'LOCKDOWN_MODE', False)
         self.last_reload_time = time.time()
 
     def reload_config(self):
@@ -69,6 +72,9 @@ class ConfigManager:
         self.PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100)
         self.PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15)
         self.CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60)
+        self.AUTHORIZED_GUILDS = getattr(cdconfig, 'AUTHORIZED_GUILDS', [])
+        self.UNAUTHORIZED_GUILDS = getattr(cdconfig, 'UNAUTHORIZED_GUILDS', [])
+        self.LOCKDOWN_MODE = getattr(cdconfig, 'LOCKDOWN_MODE', False)
         
         # Get new values
         new_values = self.get_current_values()
@@ -98,7 +104,10 @@ class ConfigManager:
             'DELETE_USER_MESSAGES_BATCH_SIZE': self.DELETE_USER_MESSAGES_BATCH_SIZE,
             'PURGE_CHANNEL_BATCH_SIZE': self.PURGE_CHANNEL_BATCH_SIZE,
             'PROCESS_CHANNEL_TIMEOUT': self.PROCESS_CHANNEL_TIMEOUT,
-            'CHANNEL_ACCESS_TIMEOUT': self.CHANNEL_ACCESS_TIMEOUT
+            'CHANNEL_ACCESS_TIMEOUT': self.CHANNEL_ACCESS_TIMEOUT,
+            'AUTHORIZED_GUILDS': self.AUTHORIZED_GUILDS,
+            'UNAUTHORIZED_GUILDS': self.UNAUTHORIZED_GUILDS,
+            'LOCKDOWN_MODE': self.LOCKDOWN_MODE
         }
 
     @staticmethod
@@ -119,6 +128,15 @@ def reload_config():
     if current_time - botconfig.last_reload_time > botconfig.CONFIG_RELOAD_INTERVAL:
         botconfig.reload_config()
 
+# Check if guilds are authorized
+def is_guild_authorized(guild_id: int) -> bool:
+    """Check if a guild is authorized to use the bot."""
+    reload_config()  # Ensure we have the latest config
+    if guild_id in botconfig.UNAUTHORIZED_GUILDS:
+        return False
+    if botconfig.LOCKDOWN_MODE:
+        return guild_id in botconfig.AUTHORIZED_GUILDS
+    return True
 
 class ResizableSemaphore:
     def __init__(self, value):
@@ -282,6 +300,14 @@ def cleanup_inaccessible_channels(connection):
         cursor.execute("DELETE FROM channel_config WHERE last_updated < %s", (threshold,))
         if cursor.rowcount > 0:
             print(f"Removed {cursor.rowcount} channel(s) due to prolonged inaccessibility")
+        
+        # Remove channels from unauthorized guilds
+        if botconfig.UNAUTHORIZED_GUILDS:  # Only run if there are banned guilds
+            format_strings = ','.join(['%s'] * len(botconfig.UNAUTHORIZED_GUILDS))
+            cursor.execute(f"DELETE FROM channel_config WHERE guild_id IN ({format_strings})", tuple(botconfig.UNAUTHORIZED_GUILDS))
+            if cursor.rowcount > 0:
+                print(f"Removed {cursor.rowcount} channel(s) from unauthorized guilds")
+        
         connection.commit()
     except Error as e:
         print(f"Error cleaning up inaccessible channels: {e}")
@@ -774,29 +800,34 @@ async def delete_old_messages_task():
 
             for config in configs:
                 channel_id = config['channel_id']
+                guild_id = config['guild_id']  # Add this to access guild_id
                 
-                # Skip this channel if it's already being processed, but we still need
-                # to try to update its timestamp if we can access it
+                # Check guild authorization first
+                if not is_guild_authorized(guild_id):
+                    print(f"Skipping channel {channel_id} in guild {guild_id} - guild is not authorized.")
+                    continue
+                
+                # Skip this channel if it's already being processed
                 already_processing = channel_id in channels_in_progress
                 if already_processing:
                     print(f"Channel ID: {channel_id} is still being processed from a previous run. Will only update timestamp if accessible.")
                 
-                guild = bot.get_guild(config['guild_id'])
+                guild = bot.get_guild(guild_id)
                 if guild is None:
-                    print(f"Guild does not exist or bot is not in guild (ID: {config['guild_id']})")
+                    print(f"Guild does not exist or bot is not in guild (ID: {guild_id})")
                     continue
 
                 if not guild.me.guild_permissions.view_channel:
-                    print(f"Bot doesn't have permission to view channels in guild (ID: {config['guild_id']})")
+                    print(f"Bot doesn't have permission to view channels in guild (ID: {guild_id})")
                     continue
 
                 channel = guild.get_channel(channel_id)
                 if channel is None:
-                    print(f"Channel does not exist in guild (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
+                    print(f"Channel does not exist in guild (Guild ID: {guild_id}, Channel ID: {channel_id})")
                     continue
 
                 if channel.permissions_for(guild.me).read_messages:
-                    # Update channel information since we have access, regardless of whether we'll process it
+                    # Update channel information since we have access
                     update_channel_info(connection, guild, channel)
                     
                     # If we're already processing this channel, skip creating a new task
@@ -807,7 +838,7 @@ async def delete_old_messages_task():
                     # Only proceed with deletion if we have the necessary permissions
                     if channel.permissions_for(guild.me).manage_messages:
                         if not channel.permissions_for(guild.me).manage_threads:
-                            print(f"Bot doesn't have permission to manage threads in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
+                            print(f"Bot doesn't have permission to manage threads in channel (Guild ID: {guild_id}, Channel ID: {channel_id})")
                             continue
 
                         delete_after = timedelta(minutes=config['delete_after'])
@@ -815,12 +846,11 @@ async def delete_old_messages_task():
                         channel_tasks[channel_id] = task
                         new_tasks.append(task)
                     else:
-                        print(f"Bot doesn't have permission to delete messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
+                        print(f"Bot doesn't have permission to delete messages in channel (Guild ID: {guild_id}, Channel ID: {channel_id})")
                 else:
-                    print(f"Bot doesn't have permission to read messages in channel (Guild ID: {config['guild_id']}, Channel ID: {channel_id})")
-                    continue
+                    print(f"Bot doesn't have permission to read messages in channel (Guild ID: {guild_id}, Channel ID: {channel_id})")
 
-            # Wait for new tasks to complete or for TASK_INTERVAL_SECONDS seconds, whichever comes first
+            # Wait for new tasks to complete or for TASK_INTERVAL_SECONDS seconds
             if new_tasks:
                 total_deleted = 0
                 total_checked = 0
@@ -844,7 +874,7 @@ async def delete_old_messages_task():
                     if pending:
                         print(f"{len(pending)} tasks are still running and will continue in the background.")
                 except asyncio.TimeoutError:
-                    print(f"Timeout reached after {botconfig.TASK_INTERVAL_SECONDS} seconds. {completed_tasks} tasks completed, {len(new_tasks) - completed_tasks} tasks are still running and will continue in the background.")
+                    print(f"Timeout reached after {botconfig.TASK_INTERVAL_SECONDS} seconds. {completed_tasks} tasks completed, {len(new_tasks) - completed_tasks} tasks are still running.")
 
             if len(channels_in_progress) > 0:
                 print(f"Delete old messages task iteration complete, however there are {len(channels_in_progress)} Channel(s) still being processed")
@@ -897,6 +927,10 @@ def get_text_channels(guild):
 ])
 @app_commands.checks.has_permissions(manage_channels=True)
 async def add_channel(interaction: discord.Interaction, channel: Union[discord.TextChannel, discord.VoiceChannel], time: int, unit: str):
+    if not is_guild_authorized(interaction.guild_id):
+        await interaction.response.send_message("This bot is not authorized to operate in this guild.", ephemeral=True)
+        return
+
     # Check if the bot has permission to manage messages in the channel
     if not channel.permissions_for(interaction.guild.me).manage_messages:
         await interaction.response.send_message(f"Error: I don't have permission to manage messages in {channel.name}. Please grant me the 'Manage Messages' permission in this channel before adding it.", ephemeral=True)
@@ -933,6 +967,10 @@ async def add_channel(interaction: discord.Interaction, channel: Union[discord.T
 @app_commands.describe(channel="The channel to remove from auto-delete")
 @app_commands.checks.has_permissions(manage_channels=True)
 async def remove_channel(interaction: discord.Interaction, channel: Union[discord.TextChannel, discord.VoiceChannel]):
+    if not is_guild_authorized(interaction.guild_id):
+        await interaction.response.send_message("This bot is not authorized to operate in this guild.", ephemeral=True)
+        return
+
     connection = create_connection()
     if connection:
         try:
@@ -966,6 +1004,10 @@ async def remove_channel(interaction: discord.Interaction, channel: Union[discor
 ])
 @app_commands.checks.has_permissions(manage_channels=True)
 async def update_time(interaction: discord.Interaction, channel: discord.TextChannel, time: int, unit: str):
+    if not is_guild_authorized(interaction.guild_id):
+        await interaction.response.send_message("This bot is not authorized to operate in this guild.", ephemeral=True)
+        return
+
     try:
         minutes = convert_to_minutes(time, unit)
     except ValueError as e:
@@ -994,6 +1036,10 @@ async def update_time(interaction: discord.Interaction, channel: discord.TextCha
 @bot.tree.command(name="list_channels", description="List all channels with auto-delete enabled")
 @app_commands.checks.has_permissions(manage_channels=True)
 async def list_channels(interaction: discord.Interaction):
+    if not is_guild_authorized(interaction.guild_id):
+        await interaction.response.send_message("This bot is not authorized to operate in this guild.", ephemeral=True)
+        return
+    
     connection = create_connection()
     if connection:
         try:
@@ -1028,6 +1074,10 @@ async def list_channels(interaction: discord.Interaction):
 @app_commands.describe(username="The username of the user whose messages to purge")
 @app_commands.checks.has_permissions(moderate_members=True)
 async def purge_user(interaction: discord.Interaction, username: str):
+    if not is_guild_authorized(interaction.guild_id):
+        await interaction.response.send_message("This bot is not authorized to operate in this guild.", ephemeral=True)
+        return
+    
     await interaction.response.defer(ephemeral=True)
 
     await interaction.followup.send(f"Starting purge operation for user: '{username}'. **NOTE:** Due to Discord limitations, you may stop getting progress updates about this process. Rest assured, the process will continue running until it successfully completes.", ephemeral=True)
@@ -1144,6 +1194,10 @@ async def purge_user(interaction: discord.Interaction, username: str):
 @app_commands.describe(channel="The channel to purge messages from")
 @app_commands.checks.has_permissions(moderate_members=True)
 async def purge_channel(interaction: discord.Interaction, channel: Union[discord.TextChannel, discord.VoiceChannel]):
+    if not is_guild_authorized(interaction.guild_id):
+        await interaction.response.send_message("This bot is not authorized to operate in this guild.", ephemeral=True)
+        return
+    
     await interaction.response.defer(ephemeral=True)
 
     await interaction.followup.send(f"Starting purge operation for channel: {channel}. **NOTE:** Due to Discord limitations, you may stop getting progress updates about this process. Rest assured, the process will continue running until it successfully completes.", ephemeral=True)
@@ -1312,6 +1366,10 @@ async def purge_channel(interaction: discord.Interaction, channel: Union[discord
 )
 @app_commands.checks.has_permissions(moderate_members=True)
 async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans: bool = False):
+    if not is_guild_authorized(interaction.guild_id):
+        await interaction.response.send_message("This bot is not authorized to operate in this guild.", ephemeral=True)
+        return
+    
     await interaction.response.defer(ephemeral=True)
     
     if not interaction.guild.me.guild_permissions.manage_threads:
@@ -1615,6 +1673,10 @@ async def lookup_guild_error(interaction: discord.Interaction, error: app_comman
 @app_commands.describe(channel_id="The ID of the channel to look up")
 @app_commands.checks.has_permissions(moderate_members=True)
 async def lookup_channel(interaction: discord.Interaction, channel_id: str):
+    if not is_guild_authorized(interaction.guild_id):
+        await interaction.response.send_message("This bot is not authorized to operate in this guild.", ephemeral=True)
+        return
+    
     try:
         # Convert the input to an integer
         channel_id = int(channel_id)
