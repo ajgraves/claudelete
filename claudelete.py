@@ -1060,30 +1060,49 @@ async def purge_user(interaction: discord.Interaction, username: str):
         channel for channel in interaction.guild.channels
         if hasattr(channel, 'history') and channel.permissions_for(interaction.guild.me).manage_messages
     ]
+    print(f"Total channels to process: {len(channels_to_process)}")
 
-    # Process channels with semaphore control
+    # Process channels with strict concurrency control
     async def process_channel(channel):
         async with purge_semaphore:
-            print(f"Acquired semaphore for channel {channel.id}, remaining slots: {purge_semaphore._value}")
+            print(f"Starting channel {channel.id}, active slots: {botconfig.MAX_CONCURRENT_TASKS - purge_semaphore._value}/{botconfig.MAX_CONCURRENT_TASKS}")
             result = await delete_user_messages(channel, username, progress_queue)
-            print(f"Released semaphore for channel {channel.id}, remaining slots: {purge_semaphore._value}")
+            print(f"Finished channel {channel.id}, active slots: {botconfig.MAX_CONCURRENT_TASKS - purge_semaphore._value}/{botconfig.MAX_CONCURRENT_TASKS}")
             return result
 
-    tasks = []
+    # Use a worker pool to limit concurrency
+    async def worker(channel_queue):
+        while True:
+            try:
+                channel = await asyncio.wait_for(channel_queue.get(), timeout=1.0)
+                try:
+                    result = await process_channel(channel)
+                    if isinstance(result, tuple):
+                        count, errors = result
+                        nonlocal total_purged, all_errors
+                        total_purged += count
+                        all_errors.extend(errors)
+                except Exception as e:
+                    all_errors.append(f"Error processing channel {channel.id}: {str(e)}")
+                finally:
+                    channel_queue.task_done()
+            except asyncio.TimeoutError:
+                # Queue is empty or timed out, exit worker
+                break
+
+    # Create a queue and add all channels
+    channel_queue = asyncio.Queue()
     for channel in channels_to_process:
-        task = asyncio.create_task(process_channel(channel))
-        tasks.append(task)
+        await channel_queue.put(channel)
 
-    # Wait for all tasks to complete
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    # Start workers up to MAX_CONCURRENT_TASKS
+    workers = [asyncio.create_task(worker(channel_queue)) for _ in range(min(botconfig.MAX_CONCURRENT_TASKS, len(channels_to_process)))]
 
-    for result in results:
-        if isinstance(result, Exception):
-            all_errors.append(str(result))
-        else:
-            count, errors = result
-            total_purged += count
-            all_errors.extend(errors)
+    # Wait for all channels to be processed
+    await channel_queue.join()
+    for w in workers:
+        w.cancel()  # Cancel workers once queue is empty
+    await asyncio.gather(*workers, return_exceptions=True)
 
     progress_task.cancel()
     try:
