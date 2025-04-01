@@ -1082,7 +1082,7 @@ async def purge_user(interaction: discord.Interaction, username: str):
                 channel = await asyncio.wait_for(channel_queue.get(), timeout=1.0)
                 try:
                     # Add random delay before processing each channel
-                    await asyncio.sleep(random.uniform(0.1, 0.5))  # Delay between 0.1 and 0.5 seconds
+                    await asyncio.sleep(random.uniform(0.1, 2))  # Delay between 0.1 and 2 seconds
                     result = await process_channel(channel)
                     if isinstance(result, tuple):
                         count, errors = result
