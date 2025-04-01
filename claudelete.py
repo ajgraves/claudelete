@@ -1035,9 +1035,10 @@ async def purge_user(interaction: discord.Interaction, username: str):
     progress_queue = asyncio.Queue()
     total_purged = 0
     all_errors = []
+    max_tasks = 10 #botconfig.MAX_CONCURRENT_TASKS
 
     # Use a plain asyncio.Semaphore instead of ResizableSemaphore
-    purge_semaphore = asyncio.Semaphore(botconfig.MAX_CONCURRENT_TASKS)
+    purge_semaphore = asyncio.Semaphore(max_tasks) #botconfig.MAX_CONCURRENT_TASKS)
 
     async def update_progress():
         nonlocal total_purged
@@ -1069,10 +1070,10 @@ async def purge_user(interaction: discord.Interaction, username: str):
         nonlocal active_tasks
         async with purge_semaphore:
             active_tasks += 1
-            print(f"Starting channel {channel.id}, active slots: {active_tasks}/{botconfig.MAX_CONCURRENT_TASKS}")
+            print(f"Starting channel {channel.id}, active slots: {active_tasks}/{max_tasks}")
             result = await delete_user_messages(channel, username, progress_queue)
             active_tasks -= 1
-            print(f"Finished channel {channel.id}, active slots: {active_tasks}/{botconfig.MAX_CONCURRENT_TASKS}")
+            print(f"Finished channel {channel.id}, active slots: {active_tasks}/{max_tasks}")
             return result
 
     async def worker(channel_queue):
@@ -1097,9 +1098,10 @@ async def purge_user(interaction: discord.Interaction, username: str):
     channel_queue = asyncio.Queue()
     for channel in channels_to_process:
         await channel_queue.put(channel)
+        await asyncio.sleep(random.uniform(0.1, 0.5)) # Random delay between adding tasks to the queue
 
     # Start workers
-    workers = [asyncio.create_task(worker(channel_queue)) for _ in range(min(botconfig.MAX_CONCURRENT_TASKS, len(channels_to_process)))]
+    workers = [asyncio.create_task(worker(channel_queue)) for _ in range(min(max_tasks, len(channels_to_process)))]
 
     # Wait for all channels to be processed
     await channel_queue.join()
