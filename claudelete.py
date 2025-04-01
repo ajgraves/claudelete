@@ -1035,10 +1035,10 @@ async def purge_user(interaction: discord.Interaction, username: str):
     progress_queue = asyncio.Queue()
     total_purged = 0
     all_errors = []
-    max_tasks = 10 #botconfig.MAX_CONCURRENT_TASKS
 
-    # Use a plain asyncio.Semaphore instead of ResizableSemaphore
-    purge_semaphore = asyncio.Semaphore(max_tasks) #botconfig.MAX_CONCURRENT_TASKS)
+    # Hardcode max_tasks for this function
+    max_tasks = 10
+    purge_semaphore = asyncio.Semaphore(max_tasks)
 
     async def update_progress():
         nonlocal total_purged
@@ -1063,7 +1063,7 @@ async def purge_user(interaction: discord.Interaction, username: str):
     ]
     print(f"Total channels to process: {len(channels_to_process)}")
 
-    # Track active tasks manually since Semaphore doesn't expose value
+    # Track active tasks
     active_tasks = 0
 
     async def process_channel(channel):
@@ -1081,6 +1081,8 @@ async def purge_user(interaction: discord.Interaction, username: str):
             try:
                 channel = await asyncio.wait_for(channel_queue.get(), timeout=1.0)
                 try:
+                    # Add random delay before processing each channel
+                    await asyncio.sleep(random.uniform(0.1, 0.5))  # Delay between 0.1 and 0.5 seconds
                     result = await process_channel(channel)
                     if isinstance(result, tuple):
                         count, errors = result
@@ -1094,11 +1096,10 @@ async def purge_user(interaction: discord.Interaction, username: str):
             except asyncio.TimeoutError:
                 break
 
-    # Create a queue and add all channels
+    # Create a queue and add all channels without delay
     channel_queue = asyncio.Queue()
     for channel in channels_to_process:
         await channel_queue.put(channel)
-        await asyncio.sleep(random.uniform(0.1, 0.5)) # Random delay between adding tasks to the queue
 
     # Start workers
     workers = [asyncio.create_task(worker(channel_queue)) for _ in range(min(max_tasks, len(channels_to_process)))]
@@ -1126,7 +1127,7 @@ async def purge_user(interaction: discord.Interaction, username: str):
         print(f"Failed to send final update: {e}")
 
     if all_errors:
-        error_message = "\n".join(all_errors[:10])  # Limit to first 10 errors
+        error_message = "\n".join(all_errors[:10])
         if len(all_errors) > 10:
             error_message += f"\n... and {len(all_errors) - 10} more errors."
         try:
