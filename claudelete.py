@@ -1036,8 +1036,8 @@ async def purge_user(interaction: discord.Interaction, username: str):
     total_purged = 0
     all_errors = []
 
-    # Create a dedicated semaphore for purge_user
-    purge_semaphore = ResizableSemaphore(botconfig.MAX_CONCURRENT_TASKS)
+    # Use a plain asyncio.Semaphore instead of ResizableSemaphore
+    purge_semaphore = asyncio.Semaphore(botconfig.MAX_CONCURRENT_TASKS)
 
     async def update_progress():
         nonlocal total_purged
@@ -1062,15 +1062,19 @@ async def purge_user(interaction: discord.Interaction, username: str):
     ]
     print(f"Total channels to process: {len(channels_to_process)}")
 
-    # Process channels with strict concurrency control
+    # Track active tasks manually since Semaphore doesn't expose value
+    active_tasks = 0
+
     async def process_channel(channel):
+        nonlocal active_tasks
         async with purge_semaphore:
-            print(f"Starting channel {channel.id}, active slots: {botconfig.MAX_CONCURRENT_TASKS - purge_semaphore._value}/{botconfig.MAX_CONCURRENT_TASKS}")
+            active_tasks += 1
+            print(f"Starting channel {channel.id}, active slots: {active_tasks}/{botconfig.MAX_CONCURRENT_TASKS}")
             result = await delete_user_messages(channel, username, progress_queue)
-            print(f"Finished channel {channel.id}, active slots: {botconfig.MAX_CONCURRENT_TASKS - purge_semaphore._value}/{botconfig.MAX_CONCURRENT_TASKS}")
+            active_tasks -= 1
+            print(f"Finished channel {channel.id}, active slots: {active_tasks}/{botconfig.MAX_CONCURRENT_TASKS}")
             return result
 
-    # Use a worker pool to limit concurrency
     async def worker(channel_queue):
         while True:
             try:
@@ -1087,7 +1091,6 @@ async def purge_user(interaction: discord.Interaction, username: str):
                 finally:
                     channel_queue.task_done()
             except asyncio.TimeoutError:
-                # Queue is empty or timed out, exit worker
                 break
 
     # Create a queue and add all channels
@@ -1095,13 +1098,13 @@ async def purge_user(interaction: discord.Interaction, username: str):
     for channel in channels_to_process:
         await channel_queue.put(channel)
 
-    # Start workers up to MAX_CONCURRENT_TASKS
+    # Start workers
     workers = [asyncio.create_task(worker(channel_queue)) for _ in range(min(botconfig.MAX_CONCURRENT_TASKS, len(channels_to_process)))]
 
     # Wait for all channels to be processed
     await channel_queue.join()
     for w in workers:
-        w.cancel()  # Cancel workers once queue is empty
+        w.cancel()
     await asyncio.gather(*workers, return_exceptions=True)
 
     progress_task.cancel()
