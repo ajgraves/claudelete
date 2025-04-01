@@ -1087,7 +1087,7 @@ async def purge_user(interaction: discord.Interaction, username: str):
     all_errors = []
 
     # Hardcode max_tasks for this function
-    max_tasks = 10
+    max_tasks = 6
     purge_semaphore = asyncio.Semaphore(max_tasks)
 
     async def update_progress():
