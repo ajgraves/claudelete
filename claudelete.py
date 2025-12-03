@@ -700,7 +700,7 @@ async def process_channel(guild, channel, delete_after):
                         await progress_queue.put(1)
                     
                     delete_end_time = time.time()
-                    print(f"Delete operation took {delete_end_time - delete_start_time:.2f} seconds")
+                    #print(f"Delete operation took {delete_end_time - delete_start_time:.2f} seconds")
                     
                     await asyncio.sleep(random.uniform(0.5, 1))
                     
