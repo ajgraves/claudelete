@@ -668,7 +668,13 @@ async def on_ready():
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
-    owner = guild.owner.display_name if guild.owner else "Unknown"
+    # Fetch owner reliably
+    try:
+        owner_user = await bot.fetch_user(guild.owner_id)
+        owner = owner_user.display_name or owner_user.global_name or owner_user.name
+    except Exception:
+        owner = "Unknown (fetch failed)"
+
     created = guild.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
     member_count = guild.member_count or "unknown"
     print(f"GUILD JOINED: {guild.name} (ID: {guild.id})")
@@ -679,7 +685,13 @@ async def on_guild_join(guild: discord.Guild):
 
 @bot.event
 async def on_guild_remove(guild: discord.Guild):
-    owner = guild.owner.display_name if guild.owner else "Unknown"
+    # Fetch owner reliably
+    try:
+        owner_user = await bot.fetch_user(guild.owner_id)
+        owner = owner_user.display_name or owner_user.global_name or owner_user.name
+    except Exception:
+        owner = "Unknown (fetch failed)"
+        
     created = guild.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
     member_count = guild.member_count or "unknown"
     print(f"GUILD REMOVED: {guild.name} (ID: {guild.id})")
