@@ -52,6 +52,8 @@ class ConfigManager:
         self.PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15) # PROCESS_CHANNEL_TIMEOUT tells Claudelete how long it should wait on a delete operation before it times out in process_channel
         self.CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60) # CHANNEL_ACCESS_TIMEOUT will allow Claudelete to remove channels it hasn't had access to for the configured amount of time
         self.ORPHANED_THREAD_CLEANUP_INTERVAL = getattr(cdconfig, 'ORPHANED_THREAD_CLEANUP_INTERVAL', 60*60*24)  # Default to 24 hours
+        self.GUILD_LOG_INTERVAL = getattr(cdconfig, 'GUILD_LOG_INTERVAL', 21600)
+        self.ORPHANED_CLEANUP_CHECK_INTERVAL = getattr(cdconfig, 'ORPHANED_CLEANUP_CHECK_INTERVAL', 3600)
         self.AUTHORIZED_GUILDS = getattr(cdconfig, 'AUTHORIZED_GUILDS', [])
         self.UNAUTHORIZED_GUILDS = getattr(cdconfig, 'UNAUTHORIZED_GUILDS', [])
         self.LOCKDOWN_MODE = getattr(cdconfig, 'LOCKDOWN_MODE', False)
@@ -74,6 +76,8 @@ class ConfigManager:
         self.PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15)
         self.CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60)
         self.ORPHANED_THREAD_CLEANUP_INTERVAL = getattr(cdconfig, 'ORPHANED_THREAD_CLEANUP_INTERVAL', 60*60*24)
+        self.GUILD_LOG_INTERVAL = getattr(cdconfig, 'GUILD_LOG_INTERVAL', 21600)
+        self.ORPHANED_CLEANUP_CHECK_INTERVAL = getattr(cdconfig, 'ORPHANED_CLEANUP_CHECK_INTERVAL', 3600)
         self.AUTHORIZED_GUILDS = getattr(cdconfig, 'AUTHORIZED_GUILDS', [])
         self.UNAUTHORIZED_GUILDS = getattr(cdconfig, 'UNAUTHORIZED_GUILDS', [])
         self.LOCKDOWN_MODE = getattr(cdconfig, 'LOCKDOWN_MODE', False)
@@ -108,6 +112,8 @@ class ConfigManager:
             'PROCESS_CHANNEL_TIMEOUT': self.PROCESS_CHANNEL_TIMEOUT,
             'CHANNEL_ACCESS_TIMEOUT': self.CHANNEL_ACCESS_TIMEOUT,
             'ORPHANED_THREAD_CLEANUP_INTERVAL': self.ORPHANED_THREAD_CLEANUP_INTERVAL,
+            'GUILD_LOG_INTERVAL': self.GUILD_LOG_INTERVAL,
+            'ORPHANED_CLEANUP_CHECK_INTERVAL': self.ORPHANED_CLEANUP_CHECK_INTERVAL,
             'AUTHORIZED_GUILDS': self.AUTHORIZED_GUILDS,
             'UNAUTHORIZED_GUILDS': self.UNAUTHORIZED_GUILDS,
             'LOCKDOWN_MODE': self.LOCKDOWN_MODE
@@ -660,6 +666,28 @@ async def on_ready():
     bot.loop.create_task(continuous_orphaned_thread_cleanup())
     bot.loop.create_task(periodic_guild_list_log())
 
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    owner = guild.owner.display_name if guild.owner else "Unknown"
+    created = guild.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+    member_count = guild.member_count or "unknown"
+    print(f"GUILD JOINED: {guild.name} (ID: {guild.id})")
+    print(f"  Owner: {owner} (ID: {guild.owner_id})")
+    print(f"  Created: {created}")
+    print(f"  Members: {member_count}")
+    print("-" * 50)
+
+@bot.event
+async def on_guild_remove(guild: discord.Guild):
+    owner = guild.owner.display_name if guild.owner else "Unknown"
+    created = guild.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+    member_count = guild.member_count or "unknown"
+    print(f"GUILD REMOVED: {guild.name} (ID: {guild.id})")
+    print(f"  Owner: {owner} (ID: {guild.owner_id})")
+    print(f"  Created: {created}")
+    print(f"  Members: {member_count}")
+    print("-" * 50)
+
 async def process_channel(guild, channel, delete_after):
     delete_count = 0
     messages_checked = 0
@@ -1065,7 +1093,7 @@ async def continuous_orphaned_thread_cleanup():
         print("Orphaned thread cleanup globally disabled (interval <= 0)")
         return
 
-    print(f"Starting continuous orphaned thread cleanup (interval: {botconfig.ORPHANED_THREAD_CLEANUP_INTERVAL}s)")
+    print(f"Starting continuous orphaned thread cleanup (run interval: {botconfig.ORPHANED_THREAD_CLEANUP_INTERVAL}s, check interval: {botconfig.ORPHANED_CLEANUP_CHECK_INTERVAL}s)")
 
     while True:
         reload_config()  # Ensure latest interval is used
@@ -1095,25 +1123,32 @@ async def continuous_orphaned_thread_cleanup():
         finally:
             connection.close()
 
-        await asyncio.sleep(3600)  # Check hourly
+        await asyncio.sleep(botconfit.ORPHANED_CLEANUP_CHECK_INTERVAL)
 
 async def periodic_guild_list_log():
     """Log the list of guilds the bot is in, every 6 hours."""
     # print("Starting periodic guild list logging (every 6 hours)")
-
+    if botconfig.GUILD_LOG_INTERVAL <= 0:
+        return
+    
     while True:
-        print("-" * 50)
+        print("-" * 60)
         print(f"Current time: {datetime.now().isoformat()}")
         print(f"Bot is in {len(bot.guilds)} guild(s):")
         if bot.guilds:
             for guild in sorted(bot.guilds, key=lambda g: g.name.lower()):
+                owner = guild.owner.display_name if guild.owner else "Unknown"
+                created = guild.created_at.strftime("%Y-%m-%d")
                 member_count = guild.member_count or "unknown"
-                print(f"  - {guild.name} (ID: {guild.id}, Members: {member_count})")
+                #print(f"  - {guild.name} (ID: {guild.id}, Members: {member_count})")
+                print(f"  - {guild.name} (ID: {guild.id})")
+                print(f"    Owner: {owner} (ID: {guild.owner_id})")
+                print(f"    Created: {created} | Members: {member_count}")
         else:
             print("  - No guilds (bot not connected yet or in zero servers)")
-        print("-" * 50)
+        print("-" * 60)
 
-        await asyncio.sleep(21600)  # 6 hours = 21600 seconds
+        await asyncio.sleep(botconfig.GUILD_LOG_INTERVAL)
 
 def get_text_channels(guild):
     return [channel for channel in guild.channels if isinstance(channel, discord.TextChannel)]

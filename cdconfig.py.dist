@@ -18,6 +18,12 @@ CONFIG_RELOAD_INTERVAL = 300
 # ORPHANED_THREAD_CLEANUP_INTERVAL tells Claudelete how often (in seconds) it should check guilds for orphaned threads and remove them
 ORPHANED_THREAD_CLEANUP_INTERVAL = 60*60*24     # Default to 24 hours in seconds
 
+# GUILD_LOG_INTERVAL tells Claudelete how often (in seconds) to log the full list of guilds the bot is in
+GUILD_LOG_INTERVAL = 21600
+
+# ORPHANED_CLEANUP_CHECK_INTERVAL tells Claudelete how often (in seconds) the orphaned thread cleanup task checks for guilds to clean
+ORPHANED_CLEANUP_CHECK_INTERVAL = 3600
+
 # MAX_CONCURRENT_TASKS tells Claudelete how many tasks to kick off at a time when checking channels for old messages that need to be deleted.
 MAX_CONCURRENT_TASKS = 25
 
