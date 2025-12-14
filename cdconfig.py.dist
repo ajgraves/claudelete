@@ -12,8 +12,11 @@ BOT_TOKEN = 'YOUR_BOT_TOKEN'
 # TASK_INTERVAL_SECONDS tells Claudelete how often to check channels for updates
 TASK_INTERVAL_SECONDS = 60
 
-# CONFIG_RELOAD_INTERVAL tells Claudelete how often it should check cdconfig.py for updates
+# CONFIG_RELOAD_INTERVAL tells Claudelete how often (in seconds) it should check cdconfig.py for updates
 CONFIG_RELOAD_INTERVAL = 300
+
+# ORPHANED_THREAD_CLEANUP_INTERVAL tells Claudelete how often (in seconds) it should check guilds for orphaned threads and remove them
+ORPHANED_THREAD_CLEANUP_INTERVAL = 60*60*24     # Default to 24 hours in seconds
 
 # MAX_CONCURRENT_TASKS tells Claudelete how many tasks to kick off at a time when checking channels for old messages that need to be deleted.
 MAX_CONCURRENT_TASKS = 25

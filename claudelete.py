@@ -51,6 +51,7 @@ class ConfigManager:
         self.PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100) # Batch size for purge_channel()
         self.PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15) # PROCESS_CHANNEL_TIMEOUT tells Claudelete how long it should wait on a delete operation before it times out in process_channel
         self.CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60) # CHANNEL_ACCESS_TIMEOUT will allow Claudelete to remove channels it hasn't had access to for the configured amount of time
+        self.ORPHANED_THREAD_CLEANUP_INTERVAL = getattr(cdconfig, 'ORPHANED_THREAD_CLEANUP_INTERVAL', 60*60*24)  # Default to 24 hours
         self.AUTHORIZED_GUILDS = getattr(cdconfig, 'AUTHORIZED_GUILDS', [])
         self.UNAUTHORIZED_GUILDS = getattr(cdconfig, 'UNAUTHORIZED_GUILDS', [])
         self.LOCKDOWN_MODE = getattr(cdconfig, 'LOCKDOWN_MODE', False)
@@ -72,6 +73,7 @@ class ConfigManager:
         self.PURGE_CHANNEL_BATCH_SIZE = getattr(cdconfig, 'PURGE_CHANNEL_BATCH_SIZE', 100)
         self.PROCESS_CHANNEL_TIMEOUT = getattr(cdconfig, 'PROCESS_CHANNEL_TIMEOUT', 15)
         self.CHANNEL_ACCESS_TIMEOUT = getattr(cdconfig, 'CHANNEL_ACCESS_TIMEOUT', 24*60)
+        self.ORPHANED_THREAD_CLEANUP_INTERVAL = getattr(cdconfig, 'ORPHANED_THREAD_CLEANUP_INTERVAL', 60*60*24)
         self.AUTHORIZED_GUILDS = getattr(cdconfig, 'AUTHORIZED_GUILDS', [])
         self.UNAUTHORIZED_GUILDS = getattr(cdconfig, 'UNAUTHORIZED_GUILDS', [])
         self.LOCKDOWN_MODE = getattr(cdconfig, 'LOCKDOWN_MODE', False)
@@ -105,6 +107,7 @@ class ConfigManager:
             'PURGE_CHANNEL_BATCH_SIZE': self.PURGE_CHANNEL_BATCH_SIZE,
             'PROCESS_CHANNEL_TIMEOUT': self.PROCESS_CHANNEL_TIMEOUT,
             'CHANNEL_ACCESS_TIMEOUT': self.CHANNEL_ACCESS_TIMEOUT,
+            'ORPHANED_THREAD_CLEANUP_INTERVAL': self.ORPHANED_THREAD_CLEANUP_INTERVAL,
             'AUTHORIZED_GUILDS': self.AUTHORIZED_GUILDS,
             'UNAUTHORIZED_GUILDS': self.UNAUTHORIZED_GUILDS,
             'LOCKDOWN_MODE': self.LOCKDOWN_MODE
@@ -254,6 +257,15 @@ def init_database():
                     UNIQUE KEY guild_channel (guild_id, channel_id)
                 )
             """)
+            # New guild_config table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS guild_config (
+                    guild_id BIGINT PRIMARY KEY,
+                    guild_name VARCHAR(255),
+                    auto_cleanup_enabled BOOLEAN DEFAULT FALSE,
+                    last_run DATETIME DEFAULT NULL
+                )
+            """)
             connection.commit()
         except Error as e:
             print(f"Error creating table: {e}")
@@ -272,7 +284,18 @@ def migrate_database():
                 cursor.execute("ALTER TABLE channel_config ADD COLUMN guild_name VARCHAR(255)")
                 cursor.execute("ALTER TABLE channel_config ADD COLUMN channel_name VARCHAR(255)")
                 cursor.execute("ALTER TABLE channel_config ADD COLUMN last_updated DATETIME")
-                connection.commit()
+            # Check if guild_config exists, create if not
+            cursor.execute("SHOW TABLES LIKE 'guild_config'")
+            if not cursor.fetchone():
+                cursor.execute("""
+                    CREATE TABLE guild_config (
+                        guild_id BIGINT PRIMARY KEY,
+                        guild_name VARCHAR(255),
+                        auto_cleanup_enabled BOOLEAN DEFAULT FALSE,
+                        last_run DATETIME DEFAULT NULL
+                    )
+                """)
+            connection.commit()
         except Error as e:
             print(f"Error migrating database: {e}")
         finally:
@@ -311,6 +334,51 @@ def cleanup_inaccessible_channels(connection):
         connection.commit()
     except Error as e:
         print(f"Error cleaning up inaccessible channels: {e}")
+    finally:
+        cursor.close()
+
+def set_guild_orphaned_cleanup_enabled(connection, guild_id: int, guild_name: str, enabled: bool):
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            INSERT INTO guild_config (guild_id, guild_name, auto_cleanup_enabled)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            guild_name = %s,
+            auto_cleanup_enabled = %s
+        """, (guild_id, guild_name, enabled, guild_name, enabled))
+        connection.commit()
+    except Error as e:
+        print(f"Error updating orphaned cleanup setting for guild {guild_id}: {e}")
+    finally:
+        cursor.close()
+
+def update_guild_orphaned_cleanup_last_run(connection, guild_id: int):
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            UPDATE guild_config
+            SET last_run = NOW()
+            WHERE guild_id = %s
+        """, (guild_id,))
+        connection.commit()
+    except Error as e:
+        print(f"Error updating last_run for guild {guild_id}: {e}")
+    finally:
+        cursor.close()
+
+def get_guilds_with_orphaned_cleanup_enabled(connection):
+    try:
+        cursor = connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute("""
+            SELECT guild_id, guild_name, auto_cleanup_enabled, last_run
+            FROM guild_config
+            WHERE auto_cleanup_enabled = 1
+        """)
+        return cursor.fetchall()
+    except Error as e:
+        print(f"Error fetching guilds with orphaned cleanup enabled: {e}")
+        return []
     finally:
         cursor.close()
 
@@ -589,6 +657,7 @@ async def on_ready():
     migrate_database()
     reload_config()
     bot.loop.create_task(continuous_delete_old_messages())
+    bot.loop.create_task(continuous_orphaned_thread_cleanup())
 
 async def process_channel(guild, channel, delete_after):
     delete_count = 0
@@ -742,6 +811,86 @@ async def process_channel(guild, channel, delete_after):
     channels_in_progress.remove(channel.id)
     del channel_tasks[channel.id]
     return delete_count, messages_checked
+
+async def automated_find_and_delete_orphaned(guild: discord.Guild, delete_orphans: bool = True):
+    """Find and optionally delete orphaned threads in a guild. Logs to console only."""
+    if not guild.me.guild_permissions.manage_threads:
+        print(f"Skipping orphaned thread cleanup in guild {guild.id} ({guild.name}): Missing 'Manage Threads' permission")
+        return
+
+    orphaned_count = 0
+    deleted_count = 0
+    errors = []
+
+    print(f"Starting automated orphaned thread cleanup in guild {guild.id} ({guild.name})")
+
+    for channel in guild.channels:
+        if not isinstance(channel, (discord.TextChannel, discord.ForumChannel)):
+            continue
+
+        if not channel.permissions_for(guild.me).view_channel:
+            continue
+
+        try:
+            # Active threads
+            for thread in channel.threads:
+                try:
+                    await channel.fetch_message(thread.id)
+                except (discord.NotFound, discord.HTTPException):
+                    orphaned_count += 1
+                    if delete_orphans:
+                        try:
+                            await thread.delete()
+                            deleted_count += 1
+                            print(f"Deleted active orphaned thread {thread.id} in #{channel.name}")
+                            await asyncio.sleep(0.5)
+                        except Exception as e:
+                            errors.append(f"Error deleting active thread {thread.id}: {str(e)}")
+
+            # Archived threads
+            try:
+                async for thread in channel.archived_threads():
+                    try:
+                        await channel.fetch_message(thread.id)
+                    except (discord.NotFound, discord.HTTPException):
+                        orphaned_count += 1
+                        if delete_orphans:
+                            try:
+                                await thread.edit(archived=False)
+                                await thread.delete()
+                                deleted_count += 1
+                                print(f"Deleted archived orphaned thread {thread.id} in #{channel.name}")
+                                await asyncio.sleep(0.5)
+                            except discord.HTTPException as e:
+                                if e.status == 429:
+                                    retry_after = getattr(e, 'retry_after', 1.0)
+                                    await asyncio.sleep(retry_after)
+                                    try:
+                                        await thread.edit(archived=False)
+                                        await thread.delete()
+                                        deleted_count += 1
+                                    except Exception as retry_e:
+                                        errors.append(f"Retry failed for archived thread {thread.id}: {str(retry_e)}")
+                                else:
+                                    errors.append(f"Error deleting archived thread {thread.id}: {str(e)}")
+                            except Exception as e:
+                                errors.append(f"Error handling archived thread {thread.id}: {str(e)}")
+            except discord.Forbidden:
+                errors.append(f"No permission to list archived threads in #{channel.name}")
+            except Exception as e:
+                errors.append(f"Error listing archived threads in #{channel.name}: {str(e)}")
+
+        except Exception as e:
+            errors.append(f"Error processing channel #{channel.name}: {str(e)}")
+
+    print(f"Automated orphaned thread cleanup complete for guild {guild.id} ({guild.name}): "
+          f"Found {orphaned_count}, Deleted {deleted_count}")
+    if errors:
+        print(f"Errors during cleanup in guild {guild.id}:")
+        for error in errors[:20]:
+            print(f"  - {error}")
+        if len(errors) > 20:
+            print(f"  ... and {len(errors) - 20} more errors.")
 
 async def handle_rate_limits(history_iterator):
     while True:
@@ -909,6 +1058,43 @@ async def continuous_delete_old_messages():
     finally:
         progress_task.cancel()
         await progress_task
+
+async def continuous_orphaned_thread_cleanup():
+    if botconfig.ORPHANED_THREAD_CLEANUP_INTERVAL <= 0:
+        print("Orphaned thread cleanup globally disabled (interval <= 0)")
+        return
+
+    print(f"Starting continuous orphaned thread cleanup (interval: {botconfig.ORPHANED_THREAD_CLEANUP_INTERVAL}s)")
+
+    while True:
+        reload_config()  # Ensure latest interval is used
+
+        connection = create_connection()
+        if not connection:
+            await asyncio.sleep(300)
+            continue
+
+        try:
+            enabled_guilds = get_guilds_with_orphaned_cleanup_enabled(connection)
+            current_time = datetime.now()
+
+            for row in enabled_guilds:
+                guild_id = row['guild_id']
+                last_run = row['last_run']
+                if last_run is None or (current_time - last_run).total_seconds() >= botconfig.ORPHANED_THREAD_CLEANUP_INTERVAL:
+                    guild = bot.get_guild(guild_id)
+                    if guild and guild.me.guild_permissions.manage_threads:
+                        print(f"Running automated orphaned thread cleanup for guild {guild_id} ({guild.name})")
+                        await automated_find_and_delete_orphaned(guild, delete_orphans=True)
+                        update_guild_orphaned_cleanup_last_run(connection, guild_id)
+                    else:
+                        print(f"Skipping orphaned cleanup for guild {guild_id}: bot not present or missing permissions")
+        except Exception as e:
+            print(f"Error in continuous_orphaned_thread_cleanup: {e}")
+        finally:
+            connection.close()
+
+        await asyncio.sleep(3600)  # Check hourly
 
 def get_text_channels(guild):
     return [channel for channel in guild.channels if isinstance(channel, discord.TextChannel)]
@@ -1603,6 +1789,84 @@ async def find_orphaned_threads(interaction: discord.Interaction, delete_orphans
         print(f"Orphaned thread search completed in guild: {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')} (ID: {interaction.guild.id})")
     except UnicodeEncodeError:
         print(f"Orphaned thread search completed in guild ID: {interaction.guild.id}")
+
+@bot.tree.command(name="enable_orphaned_cleanup", description="Enable automatic daily cleanup of orphaned threads in this server")
+@app_commands.checks.has_permissions(manage_threads=True)
+async def enable_orphaned_cleanup(interaction: discord.Interaction):
+    if not is_guild_authorized(interaction.guild_id):
+        await interaction.response.send_message("This bot is not authorized to operate in this guild.", ephemeral=True)
+        return
+
+    connection = create_connection()
+    if connection:
+        try:
+            set_guild_orphaned_cleanup_enabled(connection, interaction.guild_id, interaction.guild.name, True)
+            await interaction.response.send_message(
+                "Automatic orphaned thread cleanup has been **enabled**. It will run approximately once per day.",
+                ephemeral=True
+            )
+        finally:
+            connection.close()
+    else:
+        await interaction.response.send_message("Database error. Please try again later.", ephemeral=True)
+
+@bot.tree.command(name="disable_orphaned_cleanup", description="Disable automatic cleanup of orphaned threads in this server")
+@app_commands.checks.has_permissions(manage_threads=True)
+async def disable_orphaned_cleanup(interaction: discord.Interaction):
+    if not is_guild_authorized(interaction.guild_id):
+        await interaction.response.send_message("This bot is not authorized to operate in this guild.", ephemeral=True)
+        return
+
+    connection = create_connection()
+    if connection:
+        try:
+            set_guild_orphaned_cleanup_enabled(connection, interaction.guild_id, interaction.guild.name, False)
+            await interaction.response.send_message("Automatic orphaned thread cleanup has been **disabled**.", ephemeral=True)
+        finally:
+            connection.close()
+    else:
+        await interaction.response.send_message("Database error. Please try again later.", ephemeral=True)
+
+@bot.tree.command(name="orphaned_cleanup_status", description="Check the status and last run time of automatic orphaned thread cleanup")
+@app_commands.checks.has_permissions(manage_threads=True)
+async def orphaned_cleanup_status(interaction: discord.Interaction):
+    if not is_guild_authorized(interaction.guild_id):
+        await interaction.response.send_message("This bot is not authorized to operate in this guild.", ephemeral=True)
+        return
+
+    connection = create_connection()
+    if not connection:
+        await interaction.response.send_message("Database error. Please try again later.", ephemeral=True)
+        return
+
+    try:
+        cursor = connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute("""
+            SELECT auto_cleanup_enabled, last_run
+            FROM guild_config
+            WHERE guild_id = %s
+        """, (interaction.guild_id,))
+        row = cursor.fetchone()
+
+        if row is None:
+            message = "Automatic orphaned thread cleanup is **not configured** in this server (neither enabled nor disabled yet)."
+        else:
+            enabled = "enabled" if row['auto_cleanup_enabled'] else "disabled"
+            last_run = row['last_run']
+            if last_run:
+                # Format the datetime nicely for Discord
+                last_run_str = f"<t:{int(last_run.timestamp())}:F> (<t:{int(last_run.timestamp())}:R>)"
+                message = f"Automatic orphaned thread cleanup is **{enabled}**.\nLast run: {last_run_str}"
+            else:
+                message = f"Automatic orphaned thread cleanup is **{enabled}**, but has **never run** yet."
+
+        await interaction.response.send_message(message, ephemeral=True)
+    except Error as e:
+        print(f"Error fetching orphaned cleanup status for guild {interaction.guild_id}: {e}")
+        await interaction.response.send_message("An error occurred while checking the status.", ephemeral=True)
+    finally:
+        cursor.close()
+        connection.close()
 
 @bot.tree.command(name="show_logs", description="Show recent logs for the Claudelete bot")
 @app_commands.checks.has_permissions(moderate_members=True)
