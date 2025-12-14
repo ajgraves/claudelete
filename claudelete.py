@@ -1123,7 +1123,7 @@ async def continuous_orphaned_thread_cleanup():
         finally:
             connection.close()
 
-        await asyncio.sleep(botconfit.ORPHANED_CLEANUP_CHECK_INTERVAL)
+        await asyncio.sleep(botconfig.ORPHANED_CLEANUP_CHECK_INTERVAL)
 
 async def periodic_guild_list_log():
     """Log the list of guilds the bot is in, every 6 hours."""
