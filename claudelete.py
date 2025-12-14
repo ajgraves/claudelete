@@ -658,6 +658,7 @@ async def on_ready():
     reload_config()
     bot.loop.create_task(continuous_delete_old_messages())
     bot.loop.create_task(continuous_orphaned_thread_cleanup())
+    bot.loop.create_task(periodic_guild_list_log())
 
 async def process_channel(guild, channel, delete_after):
     delete_count = 0
@@ -1095,6 +1096,24 @@ async def continuous_orphaned_thread_cleanup():
             connection.close()
 
         await asyncio.sleep(3600)  # Check hourly
+
+async def periodic_guild_list_log():
+    """Log the list of guilds the bot is in, every 6 hours."""
+    # print("Starting periodic guild list logging (every 6 hours)")
+
+    while True:
+        print("-" * 50)
+        print(f"Current time: {datetime.now().isoformat()}")
+        print(f"Bot is in {len(bot.guilds)} guild(s):")
+        if bot.guilds:
+            for guild in sorted(bot.guilds, key=lambda g: g.name.lower()):
+                member_count = guild.member_count or "unknown"
+                print(f"  - {guild.name} (ID: {guild.id}, Members: {member_count})")
+        else:
+            print("  - No guilds (bot not connected yet or in zero servers)")
+        print("-" * 50)
+
+        await asyncio.sleep(21600)  # 6 hours = 21600 seconds
 
 def get_text_channels(guild):
     return [channel for channel in guild.channels if isinstance(channel, discord.TextChannel)]
