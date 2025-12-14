@@ -1137,12 +1137,18 @@ async def periodic_guild_list_log():
         print(f"Bot is in {len(bot.guilds)} guild(s):")
         if bot.guilds:
             for guild in sorted(bot.guilds, key=lambda g: g.name.lower()):
-                owner = guild.owner.display_name if guild.owner else "Unknown"
+                # Fetch owner user reliably
+                try:
+                    owner = await bot.fetch_user(guild.owner_id)
+                    owner_name = owner.display_name or owner.global_name or owner.name or "Unknown"
+                except Exception as e:
+                    owner_name = f"Fetch failed ({str(e)})"
+
                 created = guild.created_at.strftime("%Y-%m-%d")
                 member_count = guild.member_count or "unknown"
                 #print(f"  - {guild.name} (ID: {guild.id}, Members: {member_count})")
                 print(f"  - {guild.name} (ID: {guild.id})")
-                print(f"    Owner: {owner} (ID: {guild.owner_id})")
+                print(f"    Owner: {owner_name} (ID: {guild.owner_id})")
                 print(f"    Created: {created} | Members: {member_count}")
         else:
             print("  - No guilds (bot not connected yet or in zero servers)")
