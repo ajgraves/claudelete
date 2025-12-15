@@ -1129,7 +1129,7 @@ async def continuous_orphaned_thread_cleanup():
                 if last_run is None or (current_time - last_run).total_seconds() >= botconfig.ORPHANED_THREAD_CLEANUP_INTERVAL:
                     guild = bot.get_guild(guild_id)
                     if guild and guild.me.guild_permissions.manage_threads:
-                        print(f"Running automated orphaned thread cleanup for guild {guild_id} ({guild.name})")
+                        #print(f"Running automated orphaned thread cleanup for guild {guild_id} ({guild.name})")
                         await automated_find_and_delete_orphaned(guild, delete_orphans=True)
                         update_guild_orphaned_cleanup_last_run(connection, guild_id)
                         processed_count += 1
