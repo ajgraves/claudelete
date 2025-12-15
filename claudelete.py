@@ -723,15 +723,15 @@ async def process_channel(guild, channel, delete_after):
                     try:
                         thread = message.channel.get_thread(message.id)
                         if thread:
-                            print(f"Found thread {thread.id} to delete")
+                            #print(f"Found thread {thread.id} to delete")
                             try:
                                 await thread.delete()
-                                print(f"Successfully deleted thread {thread.id}")
+                                #print(f"Successfully deleted thread {thread.id}")
                                 await asyncio.sleep(0.5)
                             except NotFound:
-                                print(f"Thread {thread.id} was already deleted")
+                                print(f"Thread {thread.id} was already deleted in channel {channel.id}, guild {guild.id}")
                             except Forbidden:
-                                print(f"Forbidden to delete thread {thread.id}")
+                                print(f"Forbidden to delete thread {thread.id} in channel {channel.id}, guild {guild.id}")
                             except HTTPException as e:
                                 if e.status == 429:
                                     retry_after = getattr(e, 'retry_after', 1.0)  # Default to 1.0 if not present
