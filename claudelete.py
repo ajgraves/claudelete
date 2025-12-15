@@ -2051,9 +2051,17 @@ async def ping(interaction: discord.Interaction):
 # Need help?
 @bot.tree.command(name="help", description="Get help with using Claudelete")
 async def help_command(interaction: discord.Interaction):
-    discord_server_link = "https://discord.gg/9FWrfPC9bv"
-    message = f"Need help with the bot? Join our support server: {discord_server_link}"
-    await interaction.response.send_message(message, ephemeral=True)
+    discord_server_link = "https://discord.gg/EMuWEqjbef"
+    #message = f"Need help with the bot? Join our support server: {discord_server_link}"
+    embed = discord.Embed(
+        title="Claudelete Support Server",
+        description="Join for help, updates, feature requests, and community discussion!",
+        url=discord_server_link,
+        color=0x00ff00
+    )
+    embed.set_footer(text="We look forward to seeing you there!")
+    #await interaction.response.send_message(message, ephemeral=True)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # The below commands are only for fun, and are absolutely not needed in any way, shape or form for the bot to function.
 @bot.tree.command(name="marco", description="Play Marco Polo")
