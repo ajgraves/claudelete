@@ -1082,7 +1082,7 @@ async def continuous_delete_old_messages():
             #print("Starting new iteration of continuous_delete_old_messages")
             reload_config()  # This will check and reload the config if necessary
             start_time = asyncio.get_event_loop().time()
-            print(f"Starting delete_old_messages_task at {start_time}")
+            print(f"Starting delete_old_messages_task at {datetime.now().isoformat()}")
             
             await delete_old_messages_task()
             
@@ -1110,6 +1110,9 @@ async def continuous_orphaned_thread_cleanup():
     while True:
         reload_config()  # Ensure latest interval is used
 
+        start_time = asyncio.get_event_loop().time()
+        print(f"Starting orphaned thread cleanup check cycle at {datetime.now().isoformat()}")
+
         connection = create_connection()
         if not connection:
             await asyncio.sleep(300)
@@ -1119,6 +1122,7 @@ async def continuous_orphaned_thread_cleanup():
             enabled_guilds = get_guilds_with_orphaned_cleanup_enabled(connection)
             current_time = datetime.now()
 
+            processed_count = 0
             for row in enabled_guilds:
                 guild_id = row['guild_id']
                 last_run = row['last_run']
@@ -1128,14 +1132,32 @@ async def continuous_orphaned_thread_cleanup():
                         print(f"Running automated orphaned thread cleanup for guild {guild_id} ({guild.name})")
                         await automated_find_and_delete_orphaned(guild, delete_orphans=True)
                         update_guild_orphaned_cleanup_last_run(connection, guild_id)
+                        processed_count += 1
                     else:
                         print(f"Skipping orphaned cleanup for guild {guild_id}: bot not present or missing permissions")
+
+            #if processed_count == 0:
+            #    print("No guilds were due for orphaned thread cleanup this cycle")
+
         except Exception as e:
             print(f"Error in continuous_orphaned_thread_cleanup: {e}")
         finally:
             connection.close()
 
-        await asyncio.sleep(botconfig.ORPHANED_CLEANUP_CHECK_INTERVAL)
+        end_time = asyncio.get_event_loop().time()
+        elapsed_time = end_time - start_time
+        remaining_time = max(0, botconfig.ORPHANED_CLEANUP_CHECK_INTERVAL - elapsed_time)
+
+        print(f"Orphaned thread cleanup check cycle complete. "
+              f"Elapsed time: {elapsed_time:.2f} seconds")
+        if remaining_time > 0:
+            print(f"Waiting {remaining_time:.2f} seconds before next check cycle")
+            await asyncio.sleep(remaining_time)
+        else:
+            print("Check cycle took longer than interval — starting next cycle immediately")
+            # No sleep needed — loop will continue immediately
+
+        #await asyncio.sleep(botconfig.ORPHANED_CLEANUP_CHECK_INTERVAL)
 
 async def periodic_guild_list_log():
     """Log the list of guilds the bot is in, every 6 hours."""
