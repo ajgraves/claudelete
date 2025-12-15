@@ -1391,6 +1391,12 @@ async def purge_user(interaction: discord.Interaction, username: str):
         channel for channel in interaction.guild.channels
         if hasattr(channel, 'history') and channel.permissions_for(interaction.guild.me).manage_messages
     ]
+    
+    try:
+        print(f"Starting purge operation for user '{username.encode('utf-8', 'replace').decode('utf-8')}' in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
+    except UnicodeEncodeError:
+        print(f"Starting purge operation for a user with unsupported characters in a guild with unsupported characters")
+
     print(f"Total channels to process: {len(channels_to_process)}")
 
     # Track active tasks

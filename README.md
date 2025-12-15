@@ -1,7 +1,7 @@
 # Welcome to Claudelete!
 Claudelete is a Discord bot that allows you to configure time-based auto delete rules for channels on your Discord server.
 
-It was written mostly by Claude.ai, hence the name ***Claude***lete.
+It was originally written mostly by Claude.ai, hence the name ***Claude***lete. It has, however, evolved quite a bit from that initial starting point.
 
 ## Setting configuration options
 The bot needs you to configure a few variables, to do so, simply rename `cdconfig.py.dist` to `cdconfig.py` and fill out the options for database information, and your bot token from Discord.
@@ -18,7 +18,9 @@ systemd --user start claudelete-bot.service
 If you run Claudelete from the command line, then logs are being printed to STDOUT. If you run Claudelete using the systemd service, then use the command `journalctl --user-unit claudelete-bot.service` to view the logs. You can also "tail" the logs by adding the `-f` switch to the previous command, so it would be `journalctl -f --user-unit claudelete-bot.service`.
 
 ## What data is stored in the database?
-The database holds a single table titled `channel_config` with 7 columns, they are:
+The database holds two tables, titled `channel_config` and `guild_config`.
+
+### channel_config - Configuration values for the channels that Claudelete monitors
 1. **id** - This is a primary key on the table, and increments with each addition to the table. This is how the row is referenced for update and delete options.
 2. **guild_id** - Claudelete supports being used by multiple servers, this column holds the Discord internal numeric value for the Server it is in.
 3. **channel_id** - This is the Discord internal numeric value for the Channel that you've set rules for.
@@ -26,6 +28,12 @@ The database holds a single table titled `channel_config` with 7 columns, they a
 5. **guild_name** - This is the text name of the discord server, corresponding with **guild_id** above.
 6. **channel_name** - This is the text name of the channel, corresponding with **channel_id** above.
 7. **last_updated** - This is a date/time stamp when the channel was last processed. This is used by the bot to determine if the channel should be auto removed from monitoring (if it's been unreadable by the bot, or hasn't existed, for a set amount of time).
+
+### guild_config - Configuration values for the Guilds (Servers) that Claudelete is configured to periodically purge orphaned threads from
+1. **guild_id** - This is the primary key on the table, and records the Discord internal numeric value for the Server it is in.
+2. **guild_name** - This is the text name of the Discord server, corresponding with **guild_id** above.
+3. **auto_cleanup_enabled** -- This is a boolean value that determines if the guild is enabled (1) or disabled (0) in terms of automated purging of orphaned threads.
+4. **last_run** - This is a date/time stamp when the guild was last processed. This is used by the bot to determine when the purge should be run again.
 
 ## Command Reference
 ### IMPORTANT NOTE
@@ -48,3 +56,6 @@ You can purge a channel of all messages using the `/purge_channel` command. This
 
 ### Purge a user from your server
 You can also purge a user from your server, this will delete all messages sent from that user in all channels where the bot has access. Use the `/purge_user` command. You will be prompted for the user name (Note: This is not the display name, nor is it the numeric user ID assigned by discord).
+
+### Enable or disable automated purging of orphaned threads
+Claudelete can automatically purge orphaned threads from your server. This is accomplished by using the `/enable_orphaned_cleanup` command to enable it, and `/disable_orphaned_cleanup` to disable the functionality. You can check the status by running `/orphaned_cleanup_status`.
