@@ -1235,7 +1235,7 @@ async def add_channel(interaction: discord.Interaction, channel: Union[discord.T
                 minutes, interaction.guild.name, channel.name)
             cursor.execute(sql, val)
             connection.commit()
-            await interaction.response.send_message(f'Channel {channel.name} added. Messages will be deleted after {format_time(minutes)}.')
+            await interaction.response.send_message(f'Channel {channel.name} added. Messages will be deleted after {format_time(minutes)}.', ephemeral=True)
         except Error as e:
             print(f"Error adding channel: {e}")
             await interaction.response.send_message("An error occurred while adding the channel.", ephemeral=True)
@@ -1260,9 +1260,9 @@ async def remove_channel(interaction: discord.Interaction, channel: Union[discor
             cursor.execute(sql, val)
             connection.commit()
             if cursor.rowcount > 0:
-                await interaction.response.send_message(f'Channel {channel.name} removed from auto-delete.')
+                await interaction.response.send_message(f'Channel {channel.name} removed from auto-delete.', ephemeral=True)
             else:
-                await interaction.response.send_message(f'Channel {channel.name} was not in the auto-delete list.')
+                await interaction.response.send_message(f'Channel {channel.name} was not in the auto-delete list.', epehmeral=True)
         except Error as e:
             print(f"Error removing channel: {e}")
             await interaction.response.send_message("An error occurred while removing the channel.", ephemeral=True)
@@ -1303,9 +1303,9 @@ async def update_time(interaction: discord.Interaction, channel: discord.TextCha
             cursor.execute(sql, val)
             connection.commit()
             if cursor.rowcount > 0:
-                await interaction.response.send_message(f'Updated: Messages in {channel.name} will now be deleted after {format_time(minutes)}.')
+                await interaction.response.send_message(f'Updated: Messages in {channel.name} will now be deleted after {format_time(minutes)}.', ephemeral=True)
             else:
-                await interaction.response.send_message(f'Channel {channel.name} is not in the auto-delete list. Add it first.')
+                await interaction.response.send_message(f'Channel {channel.name} is not in the auto-delete list. Add it first.', ephemeral=True)
         except Error as e:
             print(f"Error updating channel: {e}")
             await interaction.response.send_message("An error occurred while updating the channel.", ephemeral=True)
@@ -1340,9 +1340,9 @@ async def list_channels(interaction: discord.Interaction):
                             message += f"- {channel.name}: {format_time(channel_data['delete_after'])} (invalid permissions or no access)\n"
                     else:
                         message += f"- Unknown Channel (ID: {channel_data['channel_id']}): {format_time(channel_data['delete_after'])} (invalid permissions or no access)\n"
-                await interaction.response.send_message(message)
+                await interaction.response.send_message(message, ephemeral=True)
             else:
-                await interaction.response.send_message("No channels are currently set for auto-delete in this server.")
+                await interaction.response.send_message("No channels are currently set for auto-delete in this server.", ephemeral=True)
         except Error as e:
             print(f"Error listing channels: {e}")
             await interaction.response.send_message("An error occurred while listing the channels.", ephemeral=True)
