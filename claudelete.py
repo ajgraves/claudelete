@@ -1269,6 +1269,7 @@ async def periodic_guild_list_log():
         #print("-" * 60)
         #print(f"Current time: {datetime.now().isoformat()}")
         #print(f"Bot is in {len(bot.guilds)} guild(s):")
+        print(f"Starting active guild log at {datetime.now().isoformat()}")
         
         connection = create_connection()
         if connection:
@@ -1315,7 +1316,8 @@ async def periodic_guild_list_log():
         
         if not bot.guilds:
             print("  - No guilds")
-        print("-" * 60)
+        #print("-" * 60)
+        print(f"Active guild log update complete, waiting for {botconfig.GUILD_LOG_INTERVAL} seconds before next iteration")
 
         await asyncio.sleep(botconfig.GUILD_LOG_INTERVAL)
 
