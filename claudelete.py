@@ -1968,37 +1968,37 @@ async def orphaned_cleanup_status(interaction: discord.Interaction):
         cursor.close()
         connection.close()
 
-@bot.tree.command(name="show_logs", description="Show recent logs for the Claudelete bot")
-@app_commands.checks.has_permissions(moderate_members=True)
-async def show_logs(interaction: discord.Interaction):
-    try:
-        # Run the journalctl command and capture its output
-        result = subprocess.run(
-            ["journalctl", "--user-unit", "claudelete-bot", "--output", "cat", "-n", "20", "--no-pager"],
-            capture_output=True,
-            text=True,
-            check=True
-        )
+# @bot.tree.command(name="show_logs", description="Show recent logs for the Claudelete bot")
+# @app_commands.checks.has_permissions(moderate_members=True)
+# async def show_logs(interaction: discord.Interaction):
+#     try:
+#         # Run the journalctl command and capture its output
+#         result = subprocess.run(
+#             ["journalctl", "--user-unit", "claudelete-bot", "--output", "cat", "-n", "20", "--no-pager"],
+#             capture_output=True,
+#             text=True,
+#             check=True
+#         )
         
-        # Format the output as a code block
-        #formatted_logs = f"```\n{result.stdout}\n```"
-        formatted_logs = result.stdout
+#         # Format the output as a code block
+#         #formatted_logs = f"```\n{result.stdout}\n```"
+#         formatted_logs = result.stdout
         
-        # If the logs are too long, split them into chunks
-        if len(formatted_logs) > 2000:
-            chunks = [formatted_logs[i:i+1990] for i in range(0, len(formatted_logs), 1990)]
-            await interaction.response.send_message("Logs are too long. Sending in multiple messages:", ephemeral=True)
-            for chunk in chunks:
-                await interaction.followup.send(f"```\n{chunk}\n```", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"```\n{formatted_logs}\n```", ephemeral=True)
+#         # If the logs are too long, split them into chunks
+#         if len(formatted_logs) > 2000:
+#             chunks = [formatted_logs[i:i+1990] for i in range(0, len(formatted_logs), 1990)]
+#             await interaction.response.send_message("Logs are too long. Sending in multiple messages:", ephemeral=True)
+#             for chunk in chunks:
+#                 await interaction.followup.send(f"```\n{chunk}\n```", ephemeral=True)
+#         else:
+#             await interaction.response.send_message(f"```\n{formatted_logs}\n```", ephemeral=True)
     
-    except subprocess.CalledProcessError as e:
-        error_message = f"An error occurred while fetching logs: {e}"
-        await interaction.response.send_message(error_message, ephemeral=True)
-    except Exception as e:
-        error_message = f"An unexpected error occurred: {e}"
-        await interaction.response.send_message(error_message, ephemeral=True)
+#     except subprocess.CalledProcessError as e:
+#         error_message = f"An error occurred while fetching logs: {e}"
+#         await interaction.response.send_message(error_message, ephemeral=True)
+#     except Exception as e:
+#         error_message = f"An unexpected error occurred: {e}"
+#         await interaction.response.send_message(error_message, ephemeral=True)
 
 @bot.tree.command(name="lookup_guild", description="Look up a guild by its ID")
 @app_commands.describe(guild_id="The ID of the guild to look up")
