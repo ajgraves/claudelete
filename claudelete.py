@@ -272,6 +272,19 @@ def init_database():
                     last_run DATETIME DEFAULT NULL
                 )
             """)
+            # New guild table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS guilds (
+                    guild_id BIGINT PRIMARY KEY,
+                    guild_name VARCHAR(255),
+                    owner_id BIGINT,
+                    owner_name VARCHAR(255),
+                    date_created DATETIME,
+                    member_count INT,
+                    is_present BOOLEAN DEFAULT TRUE,
+                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                )
+            """)
             connection.commit()
         except Error as e:
             print(f"Error creating table: {e}")
@@ -301,6 +314,19 @@ def migrate_database():
                         last_run DATETIME DEFAULT NULL
                     )
                 """)
+            # New guild table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS guilds (
+                    guild_id BIGINT PRIMARY KEY,
+                    guild_name VARCHAR(255),
+                    owner_id BIGINT,
+                    owner_name VARCHAR(255),
+                    date_created DATETIME,
+                    member_count INT,
+                    is_present BOOLEAN DEFAULT TRUE,
+                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                )
+            """)
             connection.commit()
         except Error as e:
             print(f"Error migrating database: {e}")
@@ -385,6 +411,47 @@ def get_guilds_with_orphaned_cleanup_enabled(connection):
     except Error as e:
         print(f"Error fetching guilds with orphaned cleanup enabled: {e}")
         return []
+    finally:
+        cursor.close()
+
+def upsert_guild(connection, guild_id: int, guild_name: str, owner_id: int, owner_name: str,
+                 date_created: datetime, member_count: int, is_present: bool):
+    """Insert or update a guild record"""
+    try:
+        cursor = connection.cursor()
+        cursor.execute("""
+            INSERT INTO guilds 
+            (guild_id, guild_name, owner_id, owner_name, date_created, member_count, is_present)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            guild_name = VALUES(guild_name),
+            owner_id = VALUES(owner_id),
+            owner_name = VALUES(owner_name),
+            date_created = VALUES(date_created),
+            member_count = VALUES(member_count),
+            is_present = VALUES(is_present)
+        """, (guild_id, guild_name, owner_id, owner_name, date_created, member_count, is_present))
+        connection.commit()
+    except Error as e:
+        print(f"Error upserting guild {guild_id}: {e}")
+    finally:
+        cursor.close()
+
+def mark_old_guilds_absent(connection):
+    """Mark guilds as absent if not updated in the last GUILD_LOG_INTERVAL * 2 seconds"""
+    try:
+        cursor = connection.cursor()
+        threshold = datetime.now() - timedelta(seconds=botconfig.GUILD_LOG_INTERVAL * 2)
+        cursor.execute("""
+            UPDATE guilds
+            SET is_present = FALSE
+            WHERE is_present = TRUE AND last_updated < %s
+        """, (threshold,))
+        if cursor.rowcount > 0:
+            print(f"Marked {cursor.rowcount} guild(s) as absent due to stale last_updated")
+        connection.commit()
+    except Error as e:
+        print(f"Error marking old guilds absent: {e}")
     finally:
         cursor.close()
 
@@ -683,6 +750,23 @@ async def on_guild_join(guild: discord.Guild):
     print(f"  Members: {member_count}")
     print("-" * 50)
 
+    # New: Insert into DB
+    connection = create_connection()
+    if connection:
+        try:
+            upsert_guild(
+                connection,
+                guild.id,
+                guild.name,
+                guild.owner_id,
+                owner,
+                guild.created_at,
+                guild.member_count or 0,
+                True
+            )
+        finally:
+            connection.close()
+
 @bot.event
 async def on_guild_remove(guild: discord.Guild):
     # Fetch owner reliably
@@ -699,6 +783,23 @@ async def on_guild_remove(guild: discord.Guild):
     print(f"  Created: {created}")
     print(f"  Members: {member_count}")
     print("-" * 50)
+
+    # New: Mark as not present in DB
+    connection = create_connection()
+    if connection:
+        try:
+            upsert_guild(
+                connection,
+                guild.id,
+                guild.name,
+                guild.owner_id,
+                owner,
+                guild.created_at,
+                guild.member_count or 0,
+                False
+            )
+        finally:
+            connection.close()
 
 async def process_channel(guild, channel, delete_after):
     delete_count = 0
@@ -1160,32 +1261,60 @@ async def continuous_orphaned_thread_cleanup():
         #await asyncio.sleep(botconfig.ORPHANED_CLEANUP_CHECK_INTERVAL)
 
 async def periodic_guild_list_log():
-    """Log the list of guilds the bot is in, every 6 hours."""
-    # print("Starting periodic guild list logging (every 6 hours)")
+    """Update guild tracking in DB periodically, and log overview to console."""
     if botconfig.GUILD_LOG_INTERVAL <= 0:
         return
     
     while True:
-        print("-" * 60)
-        print(f"Current time: {datetime.now().isoformat()}")
-        print(f"Bot is in {len(bot.guilds)} guild(s):")
-        if bot.guilds:
-            for guild in sorted(bot.guilds, key=lambda g: g.name.lower()):
-                # Fetch owner user reliably
-                try:
-                    owner = await bot.fetch_user(guild.owner_id)
-                    owner_name = owner.display_name or owner.global_name or owner.name or "Unknown"
-                except Exception as e:
-                    owner_name = f"Fetch failed ({str(e)})"
-
-                created = guild.created_at.strftime("%Y-%m-%d")
-                member_count = guild.member_count or "unknown"
-                #print(f"  - {guild.name} (ID: {guild.id}, Members: {member_count})")
-                print(f"  - {guild.name} (ID: {guild.id})")
-                print(f"    Owner: {owner_name} (ID: {guild.owner_id})")
-                print(f"    Created: {created} | Members: {member_count}")
+        #print("-" * 60)
+        #print(f"Current time: {datetime.now().isoformat()}")
+        #print(f"Bot is in {len(bot.guilds)} guild(s):")
+        
+        connection = create_connection()
+        if connection:
+            try:
+                for guild in sorted(bot.guilds, key=lambda g: g.name.lower()):
+                    # Try cached owner first
+                    owner_user = guild.get_member(guild.owner_id)
+                    if not owner_user:
+                        try:
+                            owner_user = await bot.fetch_user(guild.owner_id)
+                        except Exception:
+                            owner_user = None
+                    
+                    owner_name = (owner_user.display_name or 
+                                  getattr(owner_user, 'global_name', None) or 
+                                  getattr(owner_user, 'name', None) or 
+                                  "Unknown")
+                    
+                    created = guild.created_at.strftime("%Y-%m-%d")
+                    member_count = guild.member_count or "unknown"
+                    
+                    #print(f"  - {guild.name} (ID: {guild.id})")
+                    #print(f"    Owner: {owner_name} (ID: {guild.owner_id})")
+                    #print(f"    Created: {created} | Members: {member_count}")
+                    
+                    # Update DB
+                    upsert_guild(
+                        connection,
+                        guild.id,
+                        guild.name,
+                        guild.owner_id,
+                        owner_name,
+                        guild.created_at,
+                        guild.member_count or 0,
+                        True
+                    )
+                
+                # Cleanup stale entries
+                mark_old_guilds_absent(connection)
+            finally:
+                connection.close()
         else:
-            print("  - No guilds (bot not connected yet or in zero servers)")
+            print("  - Could not connect to DB for guild tracking update")
+        
+        if not bot.guilds:
+            print("  - No guilds")
         print("-" * 60)
 
         await asyncio.sleep(botconfig.GUILD_LOG_INTERVAL)
