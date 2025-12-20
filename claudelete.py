@@ -438,17 +438,20 @@ def upsert_guild(connection, guild_id: int, guild_name: str, owner_id: int, owne
         cursor.close()
 
 def mark_old_guilds_absent(connection):
-    """Mark guilds as absent if not updated in the last GUILD_LOG_INTERVAL * 2 seconds"""
+    """Mark guilds as absent only if not updated in the last 48 hours"""
     try:
         cursor = connection.cursor()
-        threshold = datetime.now() - timedelta(seconds=botconfig.GUILD_LOG_INTERVAL * 2)
+        # Very conservative: 48 hours of no update before marking absent
+        threshold = datetime.now() - timedelta(hours=48)
         cursor.execute("""
             UPDATE guilds
             SET is_present = FALSE
             WHERE is_present = TRUE AND last_updated < %s
         """, (threshold,))
         if cursor.rowcount > 0:
-            print(f"Marked {cursor.rowcount} guild(s) as absent due to stale last_updated")
+            print(f"Marked {cursor.rowcount} guild(s) as absent (last_updated older than 48 hours)")
+        else:
+            print("No guilds marked absent — all active guilds have recent updates")
         connection.commit()
     except Error as e:
         print(f"Error marking old guilds absent: {e}")
@@ -1261,7 +1264,7 @@ async def continuous_orphaned_thread_cleanup():
         #await asyncio.sleep(botconfig.ORPHANED_CLEANUP_CHECK_INTERVAL)
 
 async def periodic_guild_list_log():
-    """Update guild tracking in DB periodically, and log overview to console."""
+    """Update guild tracking in DB periodically, log overview to console, and safely clean up stale entries."""
     if botconfig.GUILD_LOG_INTERVAL <= 0:
         return
     
@@ -1269,13 +1272,14 @@ async def periodic_guild_list_log():
         #print("-" * 60)
         #print(f"Current time: {datetime.now().isoformat()}")
         #print(f"Bot is in {len(bot.guilds)} guild(s):")
-        print(f"Starting active guild log at {datetime.now().isoformat()}")
         
         connection = create_connection()
+        updated_count = 0
+        
         if connection:
             try:
                 for guild in sorted(bot.guilds, key=lambda g: g.name.lower()):
-                    # Try cached owner first
+                    # Try cached owner first (faster, less API load)
                     owner_user = guild.get_member(guild.owner_id)
                     if not owner_user:
                         try:
@@ -1295,7 +1299,7 @@ async def periodic_guild_list_log():
                     #print(f"    Owner: {owner_name} (ID: {guild.owner_id})")
                     #print(f"    Created: {created} | Members: {member_count}")
                     
-                    # Update DB
+                    # Update DB row — this refreshes last_updated automatically
                     upsert_guild(
                         connection,
                         guild.id,
@@ -1306,18 +1310,29 @@ async def periodic_guild_list_log():
                         guild.member_count or 0,
                         True
                     )
+                    updated_count += 1
                 
-                # Cleanup stale entries
+                # Always run absence cleanup if we have a connection
+                # The 48-hour threshold in mark_old_guilds_absent protects against transient issues
+                print("Running absence cleanup check (48-hour threshold)")
                 mark_old_guilds_absent(connection)
+                
+                if updated_count > 0:
+                    print(f"Successfully updated {updated_count} active guild(s) in database")
+                else:
+                    print("No active guilds updated — bot may have been removed from all servers")
+            
+            except Exception as e:
+                print(f"Error during guild DB update loop: {e}")
+                print("Absence cleanup was still attempted if connection was available")
             finally:
                 connection.close()
         else:
-            print("  - Could not connect to DB for guild tracking update")
+            print("Failed to connect to database for guild tracking — no updates or cleanup performed")
         
         if not bot.guilds:
-            print("  - No guilds")
+            print("  - No guilds currently connected")
         #print("-" * 60)
-        print(f"Active guild log update complete, waiting for {botconfig.GUILD_LOG_INTERVAL} seconds before next iteration")
 
         await asyncio.sleep(botconfig.GUILD_LOG_INTERVAL)
 
