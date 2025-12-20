@@ -268,21 +268,14 @@ def init_database():
                 CREATE TABLE IF NOT EXISTS guild_config (
                     guild_id BIGINT PRIMARY KEY,
                     guild_name VARCHAR(255),
-                    auto_cleanup_enabled BOOLEAN DEFAULT FALSE,
-                    last_run DATETIME DEFAULT NULL
-                )
-            """)
-            # New guild table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS guilds (
-                    guild_id BIGINT PRIMARY KEY,
-                    guild_name VARCHAR(255),
                     owner_id BIGINT,
                     owner_name VARCHAR(255),
                     date_created DATETIME,
                     member_count INT,
                     is_present BOOLEAN DEFAULT TRUE,
-                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    auto_cleanup_enabled BOOLEAN DEFAULT FALSE,
+                    cleanup_last_run DATETIME DEFAULT NULL
                 )
             """)
             connection.commit()
@@ -303,30 +296,36 @@ def migrate_database():
                 cursor.execute("ALTER TABLE channel_config ADD COLUMN guild_name VARCHAR(255)")
                 cursor.execute("ALTER TABLE channel_config ADD COLUMN channel_name VARCHAR(255)")
                 cursor.execute("ALTER TABLE channel_config ADD COLUMN last_updated DATETIME")
-            # Check if guild_config exists, create if not
-            cursor.execute("SHOW TABLES LIKE 'guild_config'")
-            if not cursor.fetchone():
+            # New migration: Merge guild_config into guilds, then rename to guild_config
+            # Check if guilds exists (from prior tracking setup)
+            cursor.execute("SHOW TABLES LIKE 'guilds'")
+            if cursor.fetchone():
+                # Add missing columns to guilds
                 cursor.execute("""
-                    CREATE TABLE guild_config (
-                        guild_id BIGINT PRIMARY KEY,
-                        guild_name VARCHAR(255),
-                        auto_cleanup_enabled BOOLEAN DEFAULT FALSE,
-                        last_run DATETIME DEFAULT NULL
-                    )
+                    ALTER TABLE guilds 
+                    ADD COLUMN IF NOT EXISTS auto_cleanup_enabled BOOLEAN DEFAULT FALSE,
+                    ADD COLUMN IF NOT EXISTS cleanup_last_run DATETIME DEFAULT NULL
                 """)
-            # New guild table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS guilds (
-                    guild_id BIGINT PRIMARY KEY,
-                    guild_name VARCHAR(255),
-                    owner_id BIGINT,
-                    owner_name VARCHAR(255),
-                    date_created DATETIME,
-                    member_count INT,
-                    is_present BOOLEAN DEFAULT TRUE,
-                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                )
-            """)
+                
+                # Migrate data if old guild_config exists
+                cursor.execute("SHOW TABLES LIKE 'guild_config'")
+                if cursor.fetchone():
+                    cursor.execute("""
+                        INSERT INTO guilds (guild_id, auto_cleanup_enabled, cleanup_last_run)
+                        SELECT guild_id, auto_cleanup_enabled, last_run
+                        FROM guild_config
+                        ON DUPLICATE KEY UPDATE
+                        auto_cleanup_enabled = VALUES(auto_cleanup_enabled),
+                        cleanup_last_run = VALUES(cleanup_last_run)
+                    """)
+                    
+                    # Drop old guild_config
+                    cursor.execute("DROP TABLE IF EXISTS guild_config")
+                
+                # Rename guilds to guild_config
+                cursor.execute("RENAME TABLE guilds TO guild_config")
+                
+                print("Successfully migrated and merged guild_config into guilds → renamed to guild_config")
             connection.commit()
         except Error as e:
             print(f"Error migrating database: {e}")
@@ -390,7 +389,7 @@ def update_guild_orphaned_cleanup_last_run(connection, guild_id: int):
         cursor = connection.cursor()
         cursor.execute("""
             UPDATE guild_config
-            SET last_run = NOW()
+            SET cleanup_last_run = NOW()
             WHERE guild_id = %s
         """, (guild_id,))
         connection.commit()
@@ -403,7 +402,7 @@ def get_guilds_with_orphaned_cleanup_enabled(connection):
     try:
         cursor = connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute("""
-            SELECT guild_id, guild_name, auto_cleanup_enabled, last_run
+            SELECT guild_id, guild_name, auto_cleanup_enabled, cleanup_last_run
             FROM guild_config
             WHERE auto_cleanup_enabled = 1
         """)
@@ -420,7 +419,7 @@ def upsert_guild(connection, guild_id: int, guild_name: str, owner_id: int, owne
     try:
         cursor = connection.cursor()
         cursor.execute("""
-            INSERT INTO guilds 
+            INSERT INTO guild_config 
             (guild_id, guild_name, owner_id, owner_name, date_created, member_count, is_present)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
@@ -444,7 +443,7 @@ def mark_old_guilds_absent(connection):
         # Very conservative: 48 hours of no update before marking absent
         threshold = datetime.now() - timedelta(hours=48)
         cursor.execute("""
-            UPDATE guilds
+            UPDATE guild_config
             SET is_present = FALSE
             WHERE is_present = TRUE AND last_updated < %s
         """, (threshold,))
@@ -1229,8 +1228,8 @@ async def continuous_orphaned_thread_cleanup():
             processed_count = 0
             for row in enabled_guilds:
                 guild_id = row['guild_id']
-                last_run = row['last_run']
-                if last_run is None or (current_time - last_run).total_seconds() >= botconfig.ORPHANED_THREAD_CLEANUP_INTERVAL:
+                cleanup_last_run = row['cleanup_last_run']
+                if cleanup_last_run is None or (current_time - cleanup_last_run).total_seconds() >= botconfig.ORPHANED_THREAD_CLEANUP_INTERVAL:
                     guild = bot.get_guild(guild_id)
                     if guild and guild.me.guild_permissions.manage_threads:
                         #print(f"Running automated orphaned thread cleanup for guild {guild_id} ({guild.name})")
