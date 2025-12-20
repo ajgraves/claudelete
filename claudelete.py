@@ -428,7 +428,8 @@ def upsert_guild(connection, guild_id: int, guild_name: str, owner_id: int, owne
             owner_name = VALUES(owner_name),
             date_created = VALUES(date_created),
             member_count = VALUES(member_count),
-            is_present = VALUES(is_present)
+            is_present = VALUES(is_present),
+            last_updated = NOW()
         """, (guild_id, guild_name, owner_id, owner_name, date_created, member_count, is_present))
         connection.commit()
     except Error as e:
