@@ -2087,7 +2087,7 @@ async def orphaned_cleanup_status(interaction: discord.Interaction):
     try:
         cursor = connection.cursor(MySQLdb.cursors.DictCursor)
         cursor.execute("""
-            SELECT auto_cleanup_enabled, last_run
+            SELECT auto_cleanup_enabled, cleanup_last_run
             FROM guild_config
             WHERE guild_id = %s
         """, (interaction.guild_id,))
@@ -2097,11 +2097,11 @@ async def orphaned_cleanup_status(interaction: discord.Interaction):
             message = "Automatic orphaned thread cleanup is **not configured** in this server (neither enabled nor disabled yet)."
         else:
             enabled = "enabled" if row['auto_cleanup_enabled'] else "disabled"
-            last_run = row['last_run']
+            cleanup_last_run = row['cleanup_last_run']
             if last_run:
                 # Format the datetime nicely for Discord
-                last_run_str = f"<t:{int(last_run.timestamp())}:F> (<t:{int(last_run.timestamp())}:R>)"
-                message = f"Automatic orphaned thread cleanup is **{enabled}**.\nLast run: {last_run_str}"
+                cleanup_last_run_str = f"<t:{int(cleanup_last_run.timestamp())}:F> (<t:{int(cleanup_last_run.timestamp())}:R>)"
+                message = f"Automatic orphaned thread cleanup is **{enabled}**.\nLast run: {cleanup_last_run_str}"
             else:
                 message = f"Automatic orphaned thread cleanup is **{enabled}**, but has **never run** yet."
 
