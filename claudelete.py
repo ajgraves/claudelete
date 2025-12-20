@@ -2098,7 +2098,7 @@ async def orphaned_cleanup_status(interaction: discord.Interaction):
         else:
             enabled = "enabled" if row['auto_cleanup_enabled'] else "disabled"
             cleanup_last_run = row['cleanup_last_run']
-            if last_run:
+            if cleanup_last_run:
                 # Format the datetime nicely for Discord
                 cleanup_last_run_str = f"<t:{int(cleanup_last_run.timestamp())}:F> (<t:{int(cleanup_last_run.timestamp())}:R>)"
                 message = f"Automatic orphaned thread cleanup is **{enabled}**.\nLast run: {cleanup_last_run_str}"
