@@ -57,6 +57,7 @@ class ConfigManager:
         self.AUTHORIZED_GUILDS = getattr(cdconfig, 'AUTHORIZED_GUILDS', [])
         self.UNAUTHORIZED_GUILDS = getattr(cdconfig, 'UNAUTHORIZED_GUILDS', [])
         self.LOCKDOWN_MODE = getattr(cdconfig, 'LOCKDOWN_MODE', False)
+        self.UNAUTHORIZED_LEAVE_CHECK_INTERVAL = getattr(cdconfig, 'UNAUTHORIZED_LEAVE_CHECK_INTERVAL', 300) # Default 5 minutes
         self.last_reload_time = time.time()
 
     def reload_config(self):
@@ -81,6 +82,7 @@ class ConfigManager:
         self.AUTHORIZED_GUILDS = getattr(cdconfig, 'AUTHORIZED_GUILDS', [])
         self.UNAUTHORIZED_GUILDS = getattr(cdconfig, 'UNAUTHORIZED_GUILDS', [])
         self.LOCKDOWN_MODE = getattr(cdconfig, 'LOCKDOWN_MODE', False)
+        self.UNAUTHORIZED_LEAVE_CHECK_INTERVAL = getattr(cdconfig, 'UNAUTHORIZED_LEAVE_CHECK_INTERVAL', 300)
         
         # Get new values
         new_values = self.get_current_values()
@@ -116,7 +118,8 @@ class ConfigManager:
             'ORPHANED_CLEANUP_CHECK_INTERVAL': self.ORPHANED_CLEANUP_CHECK_INTERVAL,
             'AUTHORIZED_GUILDS': self.AUTHORIZED_GUILDS,
             'UNAUTHORIZED_GUILDS': self.UNAUTHORIZED_GUILDS,
-            'LOCKDOWN_MODE': self.LOCKDOWN_MODE
+            'LOCKDOWN_MODE': self.LOCKDOWN_MODE,
+            'UNAUTHORIZED_LEAVE_CHECK_INTERVAL': self.UNAUTHORIZED_LEAVE_CHECK_INTERVAL
         }
 
     @staticmethod
@@ -735,6 +738,7 @@ async def on_ready():
     bot.loop.create_task(continuous_delete_old_messages())
     bot.loop.create_task(continuous_orphaned_thread_cleanup())
     bot.loop.create_task(periodic_guild_list_log())
+    bot.loop.create_task(continuous_unauthorized_guild_cleanup())
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
@@ -769,6 +773,15 @@ async def on_guild_join(guild: discord.Guild):
             )
         finally:
             connection.close()
+
+    # If we get added to a guild that is banned, let's immediately remove ourselves.
+    if not is_guild_authorized(guild.id):
+        try:
+            await guild.leave()
+            print(f"Immediately left unauthorized guild on join: {guild.name} ({guild.id})")
+        except Exception as e:
+            print(f"Failed to leave unauthorized guild {guild.id} right after join: {e}")
+            # Optionally: notify yourself via DM or log channel
 
 @bot.event
 async def on_guild_remove(guild: discord.Guild):
@@ -1232,6 +1245,9 @@ async def continuous_orphaned_thread_cleanup():
                 cleanup_last_run = row['cleanup_last_run']
                 if cleanup_last_run is None or (current_time - cleanup_last_run).total_seconds() >= botconfig.ORPHANED_THREAD_CLEANUP_INTERVAL:
                     guild = bot.get_guild(guild_id)
+                    if not is_guild_authorized(guild_id):
+                        print(f"Skipping orphaned cleanup for unauthorized guild {guild_id}")
+                        continue
                     if guild and guild.me.guild_permissions.manage_threads:
                         #print(f"Running automated orphaned thread cleanup for guild {guild_id} ({guild.name})")
                         await automated_find_and_delete_orphaned(guild, delete_orphans=True)
@@ -1312,6 +1328,18 @@ async def periodic_guild_list_log():
                     )
                     updated_count += 1
                 
+                # Delete guilds that have been banned
+                if botconfig.UNAUTHORIZED_GUILDS:
+                    format_strings = ','.join(['%s'] * len(botconfig.UNAUTHORIZED_GUILDS))
+                    cursor.execute(
+                        f"DELETE FROM guild_config WHERE guild_id IN ({format_strings})",
+                        tuple(botconfig.UNAUTHORIZED_GUILDS)
+                    )
+                    deleted_count = cursor.rowcount
+                    if deleted_count > 0:
+                        print(f"Cleaned up {deleted_count} unauthorized guild(s) from guild_config")
+                    connection.commit()
+
                 # Always run absence cleanup if we have a connection
                 # The 48-hour threshold in mark_old_guilds_absent protects against transient issues
                 print("Running absence cleanup check (48-hour threshold)")
@@ -1335,6 +1363,55 @@ async def periodic_guild_list_log():
         #print("-" * 60)
 
         await asyncio.sleep(botconfig.GUILD_LOG_INTERVAL)
+
+async def continuous_unauthorized_guild_cleanup():
+    """
+    Background task that periodically checks for and leaves unauthorized guilds.
+    Uses the same while-loop + dynamic sleep pattern as other continuous tasks.
+    """
+    print("Starting continuous unauthorized guild cleanup task")
+
+    while True:
+        reload_config()  # Ensure we have the latest UNAUTHORIZED_GUILDS list
+
+        #if not botconfig.UNAUTHORIZED_GUILDS:
+            # Nothing to do - sleep for a reasonable default period
+            #await asyncio.sleep(300)  # 5 minutes - can be longer if you prefer
+            #continue
+
+        start_time = time.time()
+        left_count = 0
+
+        # Make a snapshot to avoid iteration issues if guilds change during the loop
+        current_guilds = list(bot.guilds)
+
+        for guild in current_guilds:
+            if guild.id in botconfig.UNAUTHORIZED_GUILDS:
+                try:
+                    await guild.leave()
+                    print(f"Left unauthorized guild: {guild.name} ({guild.id})")
+                    left_count += 1
+                    # Very conservative delay between leaves
+                    await asyncio.sleep(1.0)  # or random.uniform(0.8, 1.5) if you want jitter
+                except Exception as e:
+                    print(f"Failed to leave unauthorized guild {guild.id}: {e}")
+
+        if left_count > 0:
+            print(f"Unauthorized guild cleanup: Left {left_count} guild(s) this cycle")
+
+        # Calculate how long the cycle took and sleep accordingly
+        elapsed = time.time() - start_time
+
+        # You can make this interval configurable in cdconfig.py
+        desired_interval = botconfig.UNAUTHORIZED_LEAVE_CHECK_INTERVAL
+
+        sleep_time = max(0, desired_interval - elapsed)
+
+        if sleep_time > 0:
+            print(f"Unauthorized cleanup cycle took {elapsed:.2f}s, sleeping for {sleep_time:.2f}s")
+            await asyncio.sleep(sleep_time)
+        else:
+            print(f"Unauthorized cleanup cycle took {elapsed:.2f}s (longer than desired interval)")
 
 def get_text_channels(guild):
     return [channel for channel in guild.channels if isinstance(channel, discord.TextChannel)]

@@ -46,3 +46,6 @@ UNAUTHORIZED_GUILDS = [111111111111111111, 222222222222222222]  # Example banned
 
 # Lockdown mode: If True, bot only operates in AUTHORIZED_GUILDS; if False, bot operates everywhere except UNAUTHORIZED_GUILDS
 LOCKDOWN_MODE = False
+
+# UNAUTHORIZED_LEAVE_CHECK_INTERVAL tells us, in seconds, how often to check if the bot is in an unauthorized guild, and compel it to leave
+UNAUTHORIZED_LEAVE_CHECK_INTERVAL = 300  # 5 minutes - adjust between 180–600 as needed
