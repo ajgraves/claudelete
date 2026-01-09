@@ -89,10 +89,10 @@ We may update these Terms at any time. Continued use after changes (with notice 
 
 We may modify, suspend, or terminate the Bot or your server's access at any time, for any reason (including suspected abuse), without liability. **This includes the right to permanently blacklist servers or owners from re-adding or using Claudelete.**
 
-## 7. Governing Law
+## 8. Governing Law
 These Terms are governed by the laws of the State of Nebraska, United States, without regard to conflict of law principles. Any disputes shall be resolved exclusively in the state or federal courts located in Sarpy County, Nebraska.
 
-## 8. Contact & Support
+## 9. Contact & Support
 For questions, data requests, or concerns:
 * Join the official support Discord server: https://discord.gg/EMuWEqjbef
 * Or use GitHub issues in the repository where this document is published
