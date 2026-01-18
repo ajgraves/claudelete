@@ -1552,20 +1552,54 @@ async def list_channels(interaction: discord.Interaction):
             cursor.execute(sql, val)
             channels = cursor.fetchall()
             
-            if channels:
-                message = "Channels with auto-delete in this server:\n"
-                for channel_data in channels:
-                    channel = interaction.guild.get_channel(channel_data['channel_id'])
-                    if channel:
-                        if channel.permissions_for(interaction.guild.me).manage_messages:
-                            message += f"- {channel.name}: {format_time(channel_data['delete_after'])}\n"
-                        else:
-                            message += f"- {channel.name}: {format_time(channel_data['delete_after'])} (invalid permissions or no access)\n"
+            channel_lines = []
+            for channel_data in channels:
+                channel_id = channel_data['channel_id']
+                delete_after = channel_data['delete_after']
+                time_str = format_time(delete_after)
+                channel = interaction.guild.get_channel(channel_id)
+                if channel:
+                    name = channel.name
+                    sort_key = name.lower()
+                    if channel.permissions_for(interaction.guild.me).manage_messages:
+                        line = f"- {name}: {time_str}\n"
                     else:
-                        message += f"- Unknown Channel (ID: {channel_data['channel_id']}): {format_time(channel_data['delete_after'])} (invalid permissions or no access)\n"
-                await interaction.response.send_message(message, ephemeral=True)
-            else:
+                        line = f"- {name}: {time_str} (invalid permissions or no access)\n"
+                else:
+                    name = f"Unknown Channel (ID: {channel_id})"
+                    sort_key = name.lower()
+                    line = f"- {name}: {time_str} (invalid permissions or no access)\n"
+                channel_lines.append((sort_key, line))
+            
+            channel_lines.sort(key=lambda x: x[0])
+            lines = [line for _, line in channel_lines]
+            
+            if not lines:
                 await interaction.response.send_message("No channels are currently set for auto-delete in this server.", ephemeral=True)
+                return
+            
+            header = "Channels with auto-delete in this server:\n"
+            continued_header = "Continued:\n"
+            max_length = 2000
+            current_message = header
+            sent_first = False
+            
+            for line in lines:
+                if len(current_message) + len(line) >= max_length:
+                    if not sent_first:
+                        await interaction.response.send_message(current_message, ephemeral=True)
+                        sent_first = True
+                    else:
+                        await interaction.followup.send(current_message, ephemeral=True)
+                    current_message = continued_header
+                current_message += line
+            
+            # Send the remaining message
+            if not sent_first:
+                await interaction.response.send_message(current_message, ephemeral=True)
+            else:
+                await interaction.followup.send(current_message, ephemeral=True)
+            
         except Error as e:
             print(f"Error listing channels: {e}")
             await interaction.response.send_message("An error occurred while listing the channels.", ephemeral=True)
