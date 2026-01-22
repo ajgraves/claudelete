@@ -1572,10 +1572,16 @@ async def list_channels(interaction: discord.Interaction):
                 #    line = f"- {name}: {time_str} (invalid permissions or no access)\n"
                 name = stored_name
                 sort_key = name.lower()
-                if channel.permissions_for(interaction.guild.me).manage_messages:
+                if channel is not None and channel.permissions_for(interaction.guild.me).manage_messages:
+                    # Has permission, show normal line
                     line = f"- {name}: {time_str}\n"
                 else:
-                    line = f"- {name}: {time_str} (invalid permissions or no access)\n"
+                    # either no channel OR no permissions
+                    line = f"- {name}: {time_str} ⚠️"
+                    if channel is None:
+                        line += f" (no longer accessible)\n"
+                    else:
+                        line += f" (missing Manage Messages permission)\n"
                 channel_lines.append((sort_key, line))
             
             channel_lines.sort(key=lambda x: x[0])
