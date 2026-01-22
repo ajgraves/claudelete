@@ -1108,29 +1108,32 @@ async def delete_old_messages_task():
             for config in configs:
                 channel_id = config['channel_id']
                 guild_id = config['guild_id']  # Add this to access guild_id
+                guild_name = config['guild_name'] or guild_id
+                channel_name = config['channel_name'] or channel_id
                 
                 # Check guild authorization first
                 if not is_guild_authorized(guild_id):
-                    print(f"Skipping channel {channel_id} in guild {guild_id} - guild is not authorized.")
+                    print(f"Skipping channel {channel_name} ({channel_id}) in guild {guild_name} ({guild_id}) - guild is not authorized.")
                     continue
                 
                 # Skip this channel if it's already being processed
                 already_processing = channel_id in channels_in_progress
                 if already_processing:
-                    print(f"Channel ID: {channel_id} is still being processed from a previous run. Will only update timestamp if accessible.")
+                    #print(f"Channel ID: {channel_id} is still being processed from a previous run. Will only update timestamp if accessible.")
+                    print(f"Channel {channel_name} is still being processed from a previous run. Will only update timestamp if accessible.")
                 
                 guild = bot.get_guild(guild_id)
                 if guild is None:
-                    print(f"Guild does not exist or bot is not in guild (ID: {guild_id})")
+                    print(f"Guild does not exist or bot is not in guild {guild_name} (ID: {guild_id})")
                     continue
 
                 if not guild.me.guild_permissions.view_channel:
-                    print(f"Bot doesn't have permission to view channels in guild (ID: {guild_id})")
+                    print(f"Bot doesn't have permission to view channels in guild {guild_name} (ID: {guild_id})")
                     continue
 
                 channel = guild.get_channel(channel_id)
                 if channel is None:
-                    print(f"Channel does not exist in guild (Guild ID: {guild_id}, Channel ID: {channel_id})")
+                    print(f"Channel {channel_name} does not exist in guild {guild_name} (Guild ID: {guild_id}, Channel ID: {channel_id})")
                     continue
 
                 if channel.permissions_for(guild.me).read_messages:
@@ -1139,13 +1142,13 @@ async def delete_old_messages_task():
                     
                     # If we're already processing this channel, skip creating a new task
                     if already_processing:
-                        print(f"Updated timestamp for channel {channel_id} but skipping deletion as it's still being processed")
+                        print(f"Updated timestamp for channel {channel_name} ({channel_id}) but skipping deletion as it's still being processed")
                         continue
                     
                     # Only proceed with deletion if we have the necessary permissions
                     if channel.permissions_for(guild.me).manage_messages:
                         if not channel.permissions_for(guild.me).manage_threads:
-                            print(f"Bot doesn't have permission to manage threads in channel (Guild ID: {guild_id}, Channel ID: {channel_id})")
+                            print(f"Bot doesn't have permission to manage threads in channel {channel_name} (Guild ID: {guild_id}, Channel ID: {channel_id})")
                             continue
 
                         delete_after = timedelta(minutes=config['delete_after'])
@@ -1153,9 +1156,9 @@ async def delete_old_messages_task():
                         channel_tasks[channel_id] = task
                         new_tasks.append(task)
                     else:
-                        print(f"Bot doesn't have permission to delete messages in channel (Guild ID: {guild_id}, Channel ID: {channel_id})")
+                        print(f"Bot doesn't have permission to delete messages in channel {channel_name} (Guild ID: {guild_id}, Channel ID: {channel_id})")
                 else:
-                    print(f"Bot doesn't have permission to read messages in channel (Guild ID: {guild_id}, Channel ID: {channel_id})")
+                    print(f"Bot doesn't have permission to read messages in channel {channel_name} (Guild ID: {guild_id}, Channel ID: {channel_id})")
 
             # Wait for new tasks to complete or for TASK_INTERVAL_SECONDS seconds
             if new_tasks:
