@@ -1547,7 +1547,7 @@ async def list_channels(interaction: discord.Interaction):
     if connection:
         try:
             cursor = connection.cursor(MySQLdb.cursors.DictCursor)
-            sql = "SELECT channel_id, delete_after FROM channel_config WHERE guild_id = %s"
+            sql = "SELECT channel_id, delete_after, channel_name FROM channel_config WHERE guild_id = %s"
             val = (interaction.guild.id,)
             cursor.execute(sql, val)
             channels = cursor.fetchall()
@@ -1556,18 +1556,25 @@ async def list_channels(interaction: discord.Interaction):
             for channel_data in channels:
                 channel_id = channel_data['channel_id']
                 delete_after = channel_data['delete_after']
+                stored_name  = channel_data['channel_name']
                 time_str = format_time(delete_after)
-                channel = interaction.guild.get_channel(channel_id)
-                if channel:
-                    name = channel.name
-                    sort_key = name.lower()
-                    if channel.permissions_for(interaction.guild.me).manage_messages:
-                        line = f"- {name}: {time_str}\n"
-                    else:
-                        line = f"- {name}: {time_str} (invalid permissions or no access)\n"
+                #channel = interaction.guild.get_channel(channel_id)
+                #if channel:
+                #    name = channel.name
+                #    sort_key = name.lower()
+                #    if channel.permissions_for(interaction.guild.me).manage_messages:
+                #        line = f"- {name}: {time_str}\n"
+                #    else:
+                #        line = f"- {name}: {time_str} (invalid permissions or no access)\n"
+                #else:
+                #    name = f"Unknown Channel (ID: {channel_id})"
+                #    sort_key = name.lower()
+                #    line = f"- {name}: {time_str} (invalid permissions or no access)\n"
+                name = stored_name
+                sort_key = name.lower()
+                if channel.permissions_for(interaction.guild.me).manage_messages:
+                    line = f"- {name}: {time_str}\n"
                 else:
-                    name = f"Unknown Channel (ID: {channel_id})"
-                    sort_key = name.lower()
                     line = f"- {name}: {time_str} (invalid permissions or no access)\n"
                 channel_lines.append((sort_key, line))
             
