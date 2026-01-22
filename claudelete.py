@@ -1558,7 +1558,7 @@ async def list_channels(interaction: discord.Interaction):
                 delete_after = channel_data['delete_after']
                 stored_name  = channel_data['channel_name']
                 time_str = format_time(delete_after)
-                #channel = interaction.guild.get_channel(channel_id)
+                channel = interaction.guild.get_channel(channel_id)
                 #if channel:
                 #    name = channel.name
                 #    sort_key = name.lower()
