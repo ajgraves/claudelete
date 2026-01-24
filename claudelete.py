@@ -844,6 +844,7 @@ async def process_channel(guild, channel, delete_after):
 
     async def delete_with_timeout(message, channel, guild):
         nonlocal consecutive_timeouts
+        nonlocal cool_off_count
 
         async def delete_attempt():
             while True:
