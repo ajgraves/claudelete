@@ -1012,8 +1012,8 @@ async def process_channel(guild, channel, delete_after):
             channels_in_progress.remove(channel.id)
         if channel.id in channel_tasks:
             del channel_tasks[channel.id]
-        print(f"Channel {channel.id} ({channel.name}) processing ended. "
-              f"Deleted: {delete_count}, Checked: {messages_checked}")
+        #print(f"Channel {channel.id} ({channel.name}) processing ended. "
+        #      f"Deleted: {delete_count}, Checked: {messages_checked}")
 
     return delete_count, messages_checked
 
