@@ -822,6 +822,14 @@ async def process_channel(guild, channel, delete_after):
     messages_checked = 0
     utc_now = datetime.now(pytz.utc)
 
+    # ────────────────────────────────────────────────
+    # Add these two variables near the top of process_channel()
+    consecutive_timeouts = 0
+    BACKOFF_AFTER_N_TIMEOUTS = 10
+    MIN_BACKOFF_MINUTES = 2
+    MAX_BACKOFF_MINUTES = 5
+    # ────────────────────────────────────────────────
+
     if delete_after.total_seconds() <= 0:
         print(f"Invalid delete_after value for channel {channel.id}: {delete_after}")
         return 0, 0
@@ -833,6 +841,8 @@ async def process_channel(guild, channel, delete_after):
     #print(f"Deletion cutoff time: {deletion_cutoff.isoformat()}")
 
     async def delete_with_timeout(message, channel, guild):
+        nonlocal consecutive_timeouts
+
         async def delete_attempt():
             while True:
                 try:
@@ -863,6 +873,7 @@ async def process_channel(guild, channel, delete_after):
 
                     # Original message deletion code
                     await message.delete()
+                    consecutive_timeouts = 0
                     return True
                 except HTTPException as e:
                     if e.status == 429:  # Rate limit error
@@ -874,6 +885,7 @@ async def process_channel(guild, channel, delete_after):
                         return False
                 except NotFound:
                     print(f"Message {message.id} not found in channel {channel.id}, guild {guild.id}")
+                    consecutive_timeouts = 0 #Treat as success-ish
                     return False
                 except Forbidden:
                     print(f"Forbidden to delete message {message.id} in channel {channel.id}, guild {guild.id}")
@@ -883,9 +895,21 @@ async def process_channel(guild, channel, delete_after):
                     return False
 
         try:
-            return await asyncio.wait_for(delete_attempt(), timeout=botconfig.PROCESS_CHANNEL_TIMEOUT)
+            success = await asyncio.wait_for(delete_attempt(), timeout=botconfig.PROCESS_CHANNEL_TIMEOUT)
+            if success:
+                consecutive_timeouts = 0
+            return success
         except TimeoutError:
-            print(f"Delete operation timed out for message {message.id} in channel {channel.id}, guild {guild.id}")
+            consecutive_timeouts += 1
+            print(f"Delete operation timed out for message {message.id} ({consecutive_timeouts/{BACKOFF_AFTER_N_TIMEOUTS}}) in channel {channel.id}, guild {guild.id}")
+
+            # If we have met or exceeded the maximum consecutive timeouts, let's pause for a bit to allow the API to cool down
+            if consecutive_timeouts >= BACKOFF_AFTER_N_TIMEOUTS:
+                backoff_sec = random.uniform(MIN_BACKOFF_MINUTES * 60, MAX_BACKOFF_MINUTES * 60)
+                print(f"process_channel: {consecutive_timeouts} consecutive timeouts reached, cooling off for {backoff_sec} seconds")
+                await asyncio.sleep(backoff_sec)
+                consecutive_timeouts = 0           # reset after giving Discord breathing room
+
             return False
 
     while True:
