@@ -913,7 +913,7 @@ async def process_channel(guild, channel, delete_after):
                     raise asyncio.CancelledError("Excessive cool-offs, restarting channel processing")
 
                 backoff_sec = random.uniform(MIN_BACKOFF_MINUTES * 60, MAX_BACKOFF_MINUTES * 60)
-                print(f"process_channel: {consecutive_timeouts} consecutive timeouts reached, cooling off for {backoff_sec} seconds")
+                print(f"process_channel: {consecutive_timeouts} consecutive timeouts reached for {channel.name} ({channel.id}), cooling off for {backoff_sec} seconds")
                 await asyncio.sleep(backoff_sec)
                 print(f"process_channel: Resuming delete operations on {channel.name} ({channel.id})")
                 consecutive_timeouts = 0           # reset after giving Discord breathing room
