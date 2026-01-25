@@ -904,7 +904,7 @@ async def process_channel(guild, channel, delete_after):
             return success
         except TimeoutError:
             consecutive_timeouts += 1
-            print(f"Delete operation timed out for message {message.id} ({consecutive_timeouts}/{BACKOFF_AFTER_N_TIMEOUTS}) in channel {channel.id}, guild {guild.id}")
+            print(f"Delete operation timed out for message {message.id} ({consecutive_timeouts}/{BACKOFF_AFTER_N_TIMEOUTS}) in channel {channel.name} ({channel.id}), guild {guild.name} ({guild.id})")
 
             # If we have met or exceeded the maximum consecutive timeouts, let's pause for a bit to allow the API to cool down
             if consecutive_timeouts >= BACKOFF_AFTER_N_TIMEOUTS:
