@@ -966,7 +966,8 @@ async def process_channel(guild, channel, delete_after):
                         delete_end_time = time.time()
                         #print(f"Delete operation took {delete_end_time - delete_start_time:.2f} seconds")
                         
-                        await asyncio.sleep(random.uniform(0.5, 1))
+                        # Add a delay between delete operations
+                        await asyncio.sleep(random.uniform(0.5, 3))
                         
                     except NotFound:
                         print(f"Message not found in channel {channel.id}, guild {guild.id}")
@@ -994,7 +995,7 @@ async def process_channel(guild, channel, delete_after):
                         last_progress_time = current_time
 
                 # Add a delay between batches
-                await asyncio.sleep(random.uniform(0.5, 1))
+                await asyncio.sleep(random.uniform(0.5, 3))
 
             except Forbidden:
                 print(f"No permission to access channel {channel.id} in guild {guild.id}")
