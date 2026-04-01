@@ -967,7 +967,7 @@ async def process_channel(guild, channel, delete_after):
                         #print(f"Delete operation took {delete_end_time - delete_start_time:.2f} seconds")
                         
                         # Add a delay between delete operations
-                        await asyncio.sleep(random.uniform(0.5, 3))
+                        await asyncio.sleep(random.uniform(1.1, 1.4))
                         
                     except NotFound:
                         print(f"Message not found in channel {channel.id}, guild {guild.id}")
