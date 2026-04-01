@@ -1840,7 +1840,7 @@ async def purge_channel(interaction: discord.Interaction, channel: Union[discord
                             try:
                                 await thread.delete()
                                 print(f"Deleted thread {thread.id} attached to message {message.id} in channel {channel.id}")
-                                await asyncio.sleep(0.5)
+                                await asyncio.sleep(random.uniform(1.1, 1.4))
                             except discord.errors.NotFound:
                                 pass  # Thread already deleted
                             except discord.errors.Forbidden:
@@ -1861,6 +1861,7 @@ async def purge_channel(interaction: discord.Interaction, channel: Union[discord
                     await message.delete()
                     rate_limit["remaining"] -= 1
                     purged_count += 1
+                    await asyncio.sleep(random.uniform(1.1, 1.4))
                     return True
                 except discord.errors.NotFound:
                     return True  # Message already deleted
