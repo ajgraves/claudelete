@@ -1808,7 +1808,15 @@ async def purge_channel(interaction: discord.Interaction, channel: Union[discord
     
     await interaction.response.defer(ephemeral=True)
 
-    await interaction.followup.send(f"Starting purge operation for channel: {channel}. **NOTE:** Due to Discord limitations, you may stop getting progress updates about this process. Rest assured, the process will continue running until it successfully completes.", ephemeral=True)
+    await interaction.followup.send(
+        f"Starting purge operation for channel: {channel}. "
+        "**NOTE:** Due to Discord limitations, you may stop getting progress updates about this process. "
+        "Additionally, the purge operation is intentionally slow to meet the Discord API limitations. "
+        "Rest assured, the process will continue running until it successfully completes. "
+        "If after some time your channel is still not empty, and you do not see messages being deleted every few seconds, "
+        "then you can retry the operation.",
+        ephemeral=True
+    )
     
     try:
         print(f"Starting purge operation for channel: {channel.name.encode('utf-8', 'replace').decode('utf-8')} in {interaction.guild.name.encode('utf-8', 'replace').decode('utf-8')}")
