@@ -58,6 +58,9 @@ class ConfigManager:
         self.UNAUTHORIZED_GUILDS = getattr(cdconfig, 'UNAUTHORIZED_GUILDS', [])
         self.LOCKDOWN_MODE = getattr(cdconfig, 'LOCKDOWN_MODE', False)
         self.UNAUTHORIZED_LEAVE_CHECK_INTERVAL = getattr(cdconfig, 'UNAUTHORIZED_LEAVE_CHECK_INTERVAL', 300) # Default 5 minutes
+        self.CHANNEL_STARTUP_BATCH_SIZE = getattr(cdconfig, 'CHANNEL_STARTUP_BATCH_SIZE', 10)
+        self.CHANNEL_STARTUP_STAGGER_MIN = getattr(cdconfig, 'CHANNEL_STARTUP_STAGGER_MIN', 0.8)
+        self.CHANNEL_STARTUP_STAGGER_MAX = getattr(cdconfig, 'CHANNEL_STARTUP_STAGGER_MAX', 2.5)
         self.last_reload_time = time.time()
 
     def reload_config(self):
@@ -83,6 +86,9 @@ class ConfigManager:
         self.UNAUTHORIZED_GUILDS = getattr(cdconfig, 'UNAUTHORIZED_GUILDS', [])
         self.LOCKDOWN_MODE = getattr(cdconfig, 'LOCKDOWN_MODE', False)
         self.UNAUTHORIZED_LEAVE_CHECK_INTERVAL = getattr(cdconfig, 'UNAUTHORIZED_LEAVE_CHECK_INTERVAL', 300)
+        self.CHANNEL_STARTUP_BATCH_SIZE = getattr(cdconfig, 'CHANNEL_STARTUP_BATCH_SIZE', 10)
+        self.CHANNEL_STARTUP_STAGGER_MIN = getattr(cdconfig, 'CHANNEL_STARTUP_STAGGER_MIN', 0.8)
+        self.CHANNEL_STARTUP_STAGGER_MAX = getattr(cdconfig, 'CHANNEL_STARTUP_STAGGER_MAX', 2.5)
         
         # Get new values
         new_values = self.get_current_values()
@@ -1152,7 +1158,8 @@ async def delete_old_messages_task():
             cursor.execute("SELECT * FROM channel_config")
             configs = cursor.fetchall()
             
-            new_tasks = []
+            # Collect all channels that need a fresh processing task (instead of launching immediately)
+            channels_to_process = []
 
             for config in configs:
                 channel_id = config['channel_id']
@@ -1201,13 +1208,37 @@ async def delete_old_messages_task():
                             continue
 
                         delete_after = timedelta(minutes=config['delete_after'])
-                        task = asyncio.create_task(process_channel_wrapper(guild, channel, delete_after))
-                        channel_tasks[channel_id] = task
-                        new_tasks.append(task)
+                        # Collect instead of launching immediately
+                        channels_to_process.append((guild, channel, delete_after))
                     else:
                         print(f"Bot doesn't have permission to delete messages in channel {channel_name} (Guild ID: {guild_id}, Channel ID: {channel_id})")
                 else:
                     print(f"Bot doesn't have permission to read messages in channel {channel_name} (Guild ID: {guild_id}, Channel ID: {channel_id})")
+
+            # === NEW: Staggered batch launch to reduce API burst ===
+            new_tasks = []
+            if channels_to_process:
+                batch_size = botconfig.CHANNEL_STARTUP_BATCH_SIZE
+                for i in range(0, len(channels_to_process), batch_size):
+                    batch = channels_to_process[i:i + batch_size]
+                    batch_tasks = []
+
+                    for guild, channel, delete_after in batch:
+                        task = asyncio.create_task(process_channel_wrapper(guild, channel, delete_after))
+                        channel_tasks[channel.id] = task
+                        batch_tasks.append(task)
+                        new_tasks.append(task)
+
+                    print(f"Staggered launch: Started batch of {len(batch)} channel(s) "
+                          f"({i + len(batch)}/{len(channels_to_process)} total)")
+
+                    # Stagger the next batch (except after the last batch)
+                    if i + batch_size < len(channels_to_process):
+                        delay = random.uniform(botconfig.CHANNEL_STARTUP_STAGGER_MIN,
+                                               botconfig.CHANNEL_STARTUP_STAGGER_MAX)
+                        print(f"  → Waiting {delay:.2f}s before launching next batch")
+                        await asyncio.sleep(delay)
+            # =======================================================
 
             # Wait for new tasks to complete or for TASK_INTERVAL_SECONDS seconds
             if new_tasks:
