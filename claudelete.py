@@ -12,13 +12,12 @@ import MySQLdb
 from MySQLdb import Error
 import time
 import random
-from typing import List, Tuple
+from typing import List, Tuple, Union
 import subprocess
 from collections import defaultdict
 import traceback
 import importlib
 import cdconfig
-from typing import Union
 # For debugging purposes, enable these lines
 #import logging
 #logging.basicConfig(level=logging.DEBUG)
